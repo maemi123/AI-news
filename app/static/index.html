@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 时讯自动处理系统</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">AI 时讯自动处理系统</p>
+        <h1>把 B 站视频一键整理成可读摘要</h1>
+        <p class="subtitle">
+          输入一个 BV 号，系统会抓取视频字幕，自动生成摘要、分类、关键词和结构化笔记。
+        </p>
+      </div>
+      <div class="hero-actions">
+        <a class="ghost-btn" href="/docs" target="_blank" rel="noreferrer">查看接口文档</a>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="card input-card">
+        <h2>开始处理</h2>
+        <p class="muted">示例：`BV1xx411c7mD`。系统会优先使用 CC 字幕；如果没有字幕，会自动尝试音频转写。</p>
+
+        <form id="process-form">
+          <label for="bv-id">BV 号</label>
+          <div class="input-row">
+            <input id="bv-id" name="bv-id" type="text" placeholder="请输入 BV 号，例如 BV1xx411c7mD" autocomplete="off">
+            <button id="submit-btn" type="submit">开始处理</button>
+          </div>
+        </form>
+
+        <div class="tips">
+          <div class="tip">
+            <strong>如果一直报 AI 错误</strong>
+            <span>优先检查 `.env` 里的 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_BASE_URL`。</span>
+          </div>
+          <div class="tip">
+            <strong>如果 B 站视频获取失败</strong>
+            <span>检查 BV 号是否正确，必要时在 `.env` 配置 `BILIBILI_SESSDATA`。</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card status-card">
+        <h2>处理状态</h2>
+        <div id="status-box" class="status status-idle">
+          <span class="status-dot"></span>
+          <div>
+            <p class="status-title">等待开始</p>
+            <p class="status-text">输入 BV 号后点击“开始处理”。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="error-card" class="card error-card hidden">
+        <h2>错误提示</h2>
+        <div class="error-grid">
+          <div>
+            <p class="label">问题原因</p>
+            <p id="error-message" class="error-message"></p>
+          </div>
+          <div>
+            <p class="label">建议处理</p>
+            <p id="error-hint" class="error-hint"></p>
+          </div>
+        </div>
+      </section>
+
+      <section id="result-card" class="card result-card hidden">
+        <div class="result-header">
+          <div>
+            <p class="eyebrow">处理结果</p>
+            <h2 id="result-title">视频标题</h2>
+          </div>
+          <span id="result-category" class="badge">未分类</span>
+        </div>
+
+        <div class="meta-grid">
+          <div class="meta-item">
+            <p class="label">BV 号</p>
+            <p id="result-bv"></p>
+          </div>
+          <div class="meta-item">
+            <p class="label">字幕来源</p>
+            <p id="result-source"></p>
+          </div>
+        </div>
+
+        <div class="content-block">
+          <p class="label">摘要</p>
+          <p id="result-summary" class="content-text"></p>
+        </div>
+
+        <div class="content-block">
+          <p class="label">核心概念</p>
+          <p id="result-core" class="content-text"></p>
+        </div>
+
+        <div class="content-block">
+          <p class="label">关键实体</p>
+          <div id="result-entities" class="tag-list"></div>
+        </div>
+
+        <div class="content-block">
+          <p class="label">标签</p>
+          <div id="result-tags" class="tag-list"></div>
+        </div>
+
+        <div class="content-block">
+          <p class="label">要点整理</p>
+          <ul id="result-points" class="points-list"></ul>
+        </div>
+
+        <div class="content-block">
+          <p class="label">示例或代码</p>
+          <pre id="result-example" class="code-block"></pre>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
