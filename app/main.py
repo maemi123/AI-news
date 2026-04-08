@@ -6,8 +6,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import router
+from app.bootstrap import seed_default_monitor_sources
 from app.config import get_settings
-from app.database import init_db
+from app.database import AsyncSessionLocal, init_db
 from app.scheduler import start_scheduler, stop_scheduler
 from app.utils.logger import setup_logger
 
@@ -20,7 +21,9 @@ STATIC_DIR = BASE_DIR / 'static'
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await init_db()
-    start_scheduler()
+    async with AsyncSessionLocal() as session:
+        await seed_default_monitor_sources(session)
+    await start_scheduler()
     try:
         yield
     finally:

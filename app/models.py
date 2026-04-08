@@ -13,6 +13,22 @@ class Base(DeclarativeBase):
     pass
 
 
+class SystemSetting(Base):
+    __tablename__ = 'system_settings'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    scheduler_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    daily_report_hour: Mapped[int] = mapped_column(Integer, default=8)
+    daily_report_minute: Mapped[int] = mapped_column(Integer, default=0)
+    fetch_lookback_hours: Mapped[int] = mapped_column(Integer, default=24)
+    scheduler_timezone: Mapped[str] = mapped_column(String(64), default='Asia/Shanghai')
+    push_provider: Mapped[str] = mapped_column(String(32), default='pushplus')
+    pushplus_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    seed_default_monitor_sources: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class MonitorSource(Base):
     __tablename__ = 'monitor_sources'
     __table_args__ = (

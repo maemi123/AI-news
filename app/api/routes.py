@@ -24,14 +24,18 @@ from app.schemas import (
     PushTestResponse,
     SimpleStatusResponse,
     StatsResponse,
+    SystemSettingsResponse,
+    SystemSettingsUpdate,
 )
 from app.services.ai_processor import AIProcessorError
 from app.services.bilibili_service import BilibiliAPIError
 from app.services.content_pipeline import ContentPipelineError, ContentPipelineService
 from app.services.fetcher import FetcherService
-from app.services.notifier import NotifierError, WeComNotifier
+from app.services.notifier import NotifierError, PushPlusNotifier
+from app.services.system_settings import SystemSettingsService
 from app.services.video_processor import VideoProcessor, VideoProcessorError
 from app.utils.helpers import get_timezone
+from app.scheduler import reload_scheduler
 
 LOGGER = logging.getLogger(__name__)
 router = APIRouter()
@@ -56,8 +60,8 @@ def get_hint_from_error(message: str, *, stage: str) -> str:
         return 'Check network connectivity, BV id validity, and BILIBILI_SESSDATA if login is required.'
     if 'feedparser' in normalized:
         return 'Install dependencies again with pip install -r requirements.txt.'
-    if 'wecom' in normalized:
-        return 'Check WECOM_WEBHOOK_URL and make sure the webhook is valid.'
+    if 'pushplus' in normalized:
+        return 'Check the PushPlus token and make sure pushplus.plus can be reached.'
     if stage == 'ai':
         return 'Check DeepSeek configuration and network connectivity, then try again.'
     if stage == 'pipeline':
@@ -75,6 +79,21 @@ async def get_monitor_source_or_404(session: AsyncSession, source_id: int) -> Mo
 @router.get('/health', response_model=SimpleStatusResponse, summary='Health check')
 async def health_check() -> SimpleStatusResponse:
     return SimpleStatusResponse()
+
+
+@router.get('/api/system-settings', response_model=SystemSettingsResponse, summary='Get runtime settings')
+async def get_system_settings(session: AsyncSession = Depends(get_db_session)) -> SystemSettingsResponse:
+    return await SystemSettingsService().read_response(session)
+
+
+@router.put('/api/system-settings', response_model=SystemSettingsResponse, summary='Update runtime settings')
+async def update_system_settings(
+    payload: SystemSettingsUpdate,
+    session: AsyncSession = Depends(get_db_session),
+) -> SystemSettingsResponse:
+    updated = await SystemSettingsService().update(session, payload)
+    await reload_scheduler()
+    return updated
 
 
 @router.post(
@@ -253,7 +272,8 @@ async def list_contents(
 
 @router.get('/api/contents/today', response_model=list[ProcessedContentRead], summary='List today contents')
 async def list_today_contents(session: AsyncSession = Depends(get_db_session)) -> list[ProcessedContentRead]:
-    timezone_name = settings.scheduler_timezone
+    runtime = await SystemSettingsService().get_or_create(session)
+    timezone_name = runtime.scheduler_timezone
     start_of_day = datetime.now(get_timezone(timezone_name)).replace(hour=0, minute=0, second=0, microsecond=0)
     cutoff = start_of_day.astimezone(timezone.utc)
     result = await session.execute(
@@ -266,7 +286,8 @@ async def list_today_contents(session: AsyncSession = Depends(get_db_session)) -
 
 @router.get('/api/stats', response_model=StatsResponse, summary='Get content stats')
 async def get_stats(session: AsyncSession = Depends(get_db_session)) -> StatsResponse:
-    timezone_name = settings.scheduler_timezone
+    runtime = await SystemSettingsService().get_or_create(session)
+    timezone_name = runtime.scheduler_timezone
     start_of_day = datetime.now(get_timezone(timezone_name)).replace(hour=0, minute=0, second=0, microsecond=0)
     cutoff = start_of_day.astimezone(timezone.utc)
 
@@ -321,9 +342,10 @@ async def fetch_now(
     session: AsyncSession = Depends(get_db_session),
 ) -> FetchRunResponse:
     try:
+        runtime = await SystemSettingsService().get_or_create(session)
         result = await ContentPipelineService().collect_and_process(
             session,
-            hours=settings.fetch_lookback_hours,
+            hours=runtime.fetch_lookback_hours,
             force_reload=force_reload,
         )
     except ContentPipelineError as exc:
@@ -346,7 +368,8 @@ async def fetch_now(
 
 @router.post('/api/push/test', response_model=PushTestResponse, summary='Send test daily report')
 async def push_test(session: AsyncSession = Depends(get_db_session)) -> PushTestResponse:
-    timezone_name = settings.scheduler_timezone
+    runtime = await SystemSettingsService().get_or_create(session)
+    timezone_name = runtime.scheduler_timezone
     start_of_day = datetime.now(get_timezone(timezone_name)).replace(hour=0, minute=0, second=0, microsecond=0)
     cutoff = start_of_day.astimezone(timezone.utc)
     result = await session.execute(
@@ -356,10 +379,12 @@ async def push_test(session: AsyncSession = Depends(get_db_session)) -> PushTest
     )
     contents = list(result.scalars().all())
     if not contents:
-        return PushTestResponse(date=start_of_day.date(), items=0, message_chunks=0, sent=False)
+        return PushTestResponse(date=start_of_day.date(), items=0, message_chunks=0, sent=False, preview=[])
 
     try:
-        chunk_count = await WeComNotifier().send_daily_report(contents, report_date=start_of_day.date())
+        notifier = PushPlusNotifier(runtime.pushplus_token or '')
+        preview_chunks = notifier.format_daily_report(contents, start_of_day.date())
+        chunk_count, _ = await notifier.send_daily_report(contents, report_date=start_of_day.date())
     except NotifierError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -370,4 +395,10 @@ async def push_test(session: AsyncSession = Depends(get_db_session)) -> PushTest
             ),
         ) from exc
 
-    return PushTestResponse(date=start_of_day.date(), items=len(contents), message_chunks=chunk_count, sent=True)
+    return PushTestResponse(
+        date=start_of_day.date(),
+        items=len(contents),
+        message_chunks=chunk_count,
+        sent=True,
+        preview=preview_chunks,
+    )

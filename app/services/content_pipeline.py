@@ -15,6 +15,26 @@ from app.services.fetcher import FetcherError, FetcherService
 from app.utils.helpers import utcnow
 
 LOGGER = logging.getLogger(__name__)
+AI_KEYWORDS = {
+    'ai', 'aigc', 'agent', 'llm', 'gpt', 'openai', 'anthropic', 'claude', 'gemini',
+    'deepseek', 'kimi', '智谱', '通义', '大模型', '模型', '人工智能', '机器学习',
+    '生成式', '算力', '推理', '多模态', '机器人', '自动驾驶', 'computer use',
+}
+AI_SUPPORTING_KEYWORDS = {
+    'nvidia', 'cuda', 'h100', 'b200', '训练', '微调', '蒸馏', 'benchmark', 'inference',
+    'reasoning', 'rag', 'agentic', 'copilot', '芯片', '显卡', 'token', 'embedding',
+    'transformer', 'diffusion', 'vision language', 'vlm', 'asr', 'whisper',
+}
+NON_AI_KEYWORDS = {
+    'football', 'soccer', 'nba', 'movie', 'music', 'celebrity', 'fashion', 'travel',
+    'restaurant', 'weather', 'crypto price', 'stock price only', '自拍', '美食', '旅游',
+    '穿搭', '综艺', '娱乐圈', '演唱会', '电影票房',
+}
+HIGH_SIGNAL_NAMES = {
+    'sam altman', 'jensen huang', 'satya nadella', 'demis hassabis', 'dario amodei',
+    'andrej karpathy', 'andrew ng', 'yann lecun', 'fei-fei li', 'liangwenfeng',
+    '梁文锋', '杨植麟', '张鹏', '唐杰', '李开复', '彭志辉', '稚晖君',
+}
 
 
 class ContentPipelineError(RuntimeError):
@@ -64,6 +84,16 @@ class ContentPipelineService:
         for decision in decisions:
             existing = await self._find_existing_content(session, decision.content.platform, decision.content.original_id)
             if existing is not None:
+                continue
+
+            if not self._is_ai_relevant(
+                decision.content.title,
+                decision.content.content,
+                source_name=decision.content.source_name,
+                platform=decision.content.platform,
+                source_category=decision.content.source_category,
+            ):
+                LOGGER.info('Skipping non-AI content: %s', decision.content.title)
                 continue
 
             processed = ProcessedContent(
@@ -138,3 +168,40 @@ class ContentPipelineService:
             )
         )
         return result.scalar_one_or_none()
+
+    def _is_ai_relevant(
+        self,
+        title: str | None,
+        content: str | None,
+        *,
+        source_name: str | None = None,
+        platform: str | None = None,
+        source_category: str | None = None,
+    ) -> bool:
+        haystack = f'{title or ""}\n{content or ""}'.lower()
+
+        positive_hits = sum(1 for keyword in AI_KEYWORDS if keyword in haystack)
+        supporting_hits = sum(1 for keyword in AI_SUPPORTING_KEYWORDS if keyword in haystack)
+        negative_hits = sum(1 for keyword in NON_AI_KEYWORDS if keyword in haystack)
+
+        title_text = (title or '').lower()
+        title_positive = sum(1 for keyword in AI_KEYWORDS if keyword in title_text)
+        source_text = (source_name or '').lower()
+        source_bonus = 0
+        if source_text in HIGH_SIGNAL_NAMES:
+            source_bonus += 2
+        if source_category in {'company', 'academic'}:
+            source_bonus += 1
+        if platform == 'bilibili':
+            source_bonus += 1
+
+        score = positive_hits * 3 + supporting_hits + title_positive * 2 + source_bonus - negative_hits * 3
+        if 'openai' in haystack or 'deepseek' in haystack or 'anthropic' in haystack:
+            score += 2
+        if positive_hits == 0 and supporting_hits == 0 and negative_hits > 0:
+            return False
+        if positive_hits >= 1 and title_positive >= 1:
+            return True
+        if positive_hits >= 2:
+            return True
+        return score >= 3

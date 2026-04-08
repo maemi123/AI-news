@@ -51,6 +51,63 @@
         </article>
       </section>
 
+      <section class="card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">System settings</p>
+            <h2>自动采集与 PushPlus 配置</h2>
+          </div>
+        </div>
+        <div class="split-grid">
+          <div class="helper-card">
+            <strong>当前自动任务</strong>
+            <span id="scheduler-summary">读取中...</span>
+          </div>
+          <div class="helper-card">
+            <strong>PushPlus 推送</strong>
+            <span id="pushplus-summary">读取中...</span>
+          </div>
+          <div class="helper-card">
+            <strong>AI 内容筛选</strong>
+            <span>抓取后会先做一层 AI 关键词过滤，再进入摘要和评分流程，尽量把明显不相关内容挡掉。</span>
+          </div>
+          <div class="helper-card">
+            <strong>推送说明</strong>
+            <span>保存下面的设置后，系统会按前端配置的时间自动抓取并推送。注意：定时任务依赖当前 FastAPI 服务持续运行，关掉服务后不会继续执行。</span>
+          </div>
+        </div>
+        <form id="settings-form" class="stack-form settings-form">
+          <div class="settings-grid">
+            <div>
+              <label for="scheduler-enabled">自动任务</label>
+              <select id="scheduler-enabled" name="scheduler_enabled">
+                <option value="true">启用</option>
+                <option value="false">关闭</option>
+              </select>
+            </div>
+            <div>
+              <label for="daily-report-hour">小时</label>
+              <input id="daily-report-hour" name="daily_report_hour" type="number" min="0" max="23" value="8">
+            </div>
+            <div>
+              <label for="daily-report-minute">分钟</label>
+              <input id="daily-report-minute" name="daily_report_minute" type="number" min="0" max="59" value="0">
+            </div>
+            <div>
+              <label for="fetch-lookback-hours">回看小时数</label>
+              <input id="fetch-lookback-hours" name="fetch_lookback_hours" type="number" min="1" max="168" value="24">
+            </div>
+          </div>
+          <label for="scheduler-timezone">时区</label>
+          <input id="scheduler-timezone" name="scheduler_timezone" type="text" value="Asia/Shanghai">
+          <label for="pushplus-token">PushPlus Token</label>
+          <input id="pushplus-token" name="pushplus_token" type="text" placeholder="输入新的 PushPlus token；留空表示保留现有 token">
+          <div class="form-actions">
+            <button id="save-settings-btn" class="btn" type="submit">保存推送设置</button>
+          </div>
+        </form>
+      </section>
+
       <section id="action-status" class="status status-idle inline-status">
         <span class="status-dot"></span>
         <div>
@@ -143,6 +200,16 @@
         <div id="content-list" class="content-stream">
           <article class="stream-empty">还没有处理内容，先添加监控源并执行一次采集。</article>
         </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Push preview</p>
+            <h2>最近一次推送预览</h2>
+          </div>
+        </div>
+        <div id="push-preview" class="preview-panel">还没有推送预览，点击“测试推送”后会显示这里。</div>
       </section>
     </main>
   </div>

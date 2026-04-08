@@ -8,6 +8,10 @@ const fetchNowBtn = document.getElementById("fetch-now-btn");
 const pushTestBtn = document.getElementById("push-test-btn");
 const resetSourceBtn = document.getElementById("reset-source-btn");
 const actionStatus = document.getElementById("action-status");
+const schedulerSummary = document.getElementById("scheduler-summary");
+const pushplusSummary = document.getElementById("pushplus-summary");
+const settingsForm = document.getElementById("settings-form");
+const pushPreview = document.getElementById("push-preview");
 
 let editingSourceId = null;
 
@@ -51,6 +55,31 @@ function renderCategorySummary(categories) {
     span.textContent = `${item.category}: ${item.count}`;
     categorySummary.appendChild(span);
   });
+}
+
+function renderSystemSettings(settings) {
+  if (!settings) {
+    schedulerSummary.textContent = "未读取到调度配置。";
+    pushplusSummary.textContent = "未读取到推送配置。";
+    return;
+  }
+
+  schedulerSummary.textContent = settings.scheduler_enabled
+    ? `已启用，每天 ${String(settings.daily_report_hour).padStart(2, "0")}:${String(settings.daily_report_minute).padStart(2, "0")} 执行，时区 ${settings.scheduler_timezone}，回看最近 ${settings.fetch_lookback_hours} 小时。`
+    : "当前已关闭自动采集任务。";
+
+  pushplusSummary.textContent = settings.pushplus_configured
+    ? `已配置 PushPlus token（${settings.pushplus_token_masked || "已隐藏"}），可以直接测试推送。`
+    : "尚未配置 PushPlus token，当前只能先完成采集和入库。";
+
+  document.getElementById("scheduler-enabled").value = String(settings.scheduler_enabled);
+  document.getElementById("daily-report-hour").value = settings.daily_report_hour;
+  document.getElementById("daily-report-minute").value = settings.daily_report_minute;
+  document.getElementById("fetch-lookback-hours").value = settings.fetch_lookback_hours;
+  document.getElementById("scheduler-timezone").value = settings.scheduler_timezone;
+  document.getElementById("pushplus-token").placeholder = settings.pushplus_token_masked
+    ? `当前 token: ${settings.pushplus_token_masked}`
+    : "输入新的 PushPlus token；留空表示保留现有 token";
 }
 
 function renderSources(items) {
@@ -148,17 +177,31 @@ async function requestJson(url, options = {}) {
 }
 
 async function loadDashboard() {
-  const [sources, stats, categories, contents] = await Promise.all([
+  const [sources, stats, categories, contents, systemSettings] = await Promise.all([
     requestJson("/api/monitor-sources"),
     requestJson("/api/stats"),
     requestJson("/api/categories"),
     requestJson("/api/contents?page=1&page_size=12"),
+    requestJson("/api/system-settings"),
   ]);
 
   renderSources(sources);
   fillStats(stats);
   renderCategorySummary(categories);
   renderContents(contents.items || []);
+  renderSystemSettings(systemSettings);
+}
+
+function getSettingsPayload() {
+  return {
+    scheduler_enabled: document.getElementById("scheduler-enabled").value === "true",
+    daily_report_hour: Number(document.getElementById("daily-report-hour").value || 8),
+    daily_report_minute: Number(document.getElementById("daily-report-minute").value || 0),
+    fetch_lookback_hours: Number(document.getElementById("fetch-lookback-hours").value || 24),
+    scheduler_timezone: document.getElementById("scheduler-timezone").value.trim() || "Asia/Shanghai",
+    push_provider: "pushplus",
+    pushplus_token: document.getElementById("pushplus-token").value.trim() || null,
+  };
 }
 
 async function saveSource(event) {
@@ -249,15 +292,35 @@ async function triggerFetch() {
 
 async function triggerPushTest() {
   try {
-    setActionStatus("loading", "推送中", "正在把今日内容整理成企业微信日报...");
+    setActionStatus("loading", "推送中", "正在把今日内容整理成 PushPlus 日报...");
     const result = await requestJson("/api/push/test", { method: "POST" });
     if (!result.sent) {
-      setActionStatus("idle", "没有可推送内容", "今天还没有已处理内容，或者尚未配置企业微信 webhook。")
+      pushPreview.textContent = "今天还没有可推送内容，或者尚未配置 PushPlus token。";
+      setActionStatus("idle", "没有可推送内容", "今天还没有已处理内容，或者尚未配置 PushPlus token。")
       return;
     }
+    pushPreview.innerHTML = (result.preview || [])
+      .map((chunk) => `<pre class="code-block preview-code">${chunk}</pre>`)
+      .join("");
     setActionStatus("success", "推送完成", `已发送 ${result.message_chunks} 段消息，覆盖 ${result.items} 条内容。`)
   } catch (error) {
     setActionStatus("error", "推送失败", error.message);
+  }
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  try {
+    setActionStatus("loading", "保存中", "正在保存调度和 PushPlus 配置，并重载定时任务...");
+    await requestJson("/api/system-settings", {
+      method: "PUT",
+      body: JSON.stringify(getSettingsPayload()),
+    });
+    document.getElementById("pushplus-token").value = "";
+    await loadDashboard();
+    setActionStatus("success", "配置已保存", "新的调度时间和 PushPlus 设置已经生效。");
+  } catch (error) {
+    setActionStatus("error", "保存失败", error.message);
   }
 }
 
@@ -275,6 +338,7 @@ refreshAllBtn.addEventListener("click", async () => {
 fetchNowBtn.addEventListener("click", triggerFetch);
 pushTestBtn.addEventListener("click", triggerPushTest);
 resetSourceBtn.addEventListener("click", resetForm);
+settingsForm.addEventListener("submit", saveSettings);
 
 resetForm();
 loadDashboard().catch((error) => {

@@ -134,8 +134,31 @@ class PushTestResponse(BaseModel):
     items: int
     message_chunks: int
     sent: bool
+    preview: list[str] = Field(default_factory=list)
 
 
 class SimpleStatusResponse(BaseModel):
     ok: bool = True
     message: str = 'ok'
+
+
+class SystemSettingsResponse(BaseModel):
+    scheduler_enabled: bool
+    daily_report_hour: int
+    daily_report_minute: int
+    scheduler_timezone: str
+    fetch_lookback_hours: int
+    push_provider: str
+    pushplus_configured: bool
+    pushplus_token_masked: str | None = None
+    seed_default_monitor_sources: bool
+
+
+class SystemSettingsUpdate(BaseModel):
+    scheduler_enabled: bool
+    daily_report_hour: int = Field(ge=0, le=23)
+    daily_report_minute: int = Field(ge=0, le=59)
+    scheduler_timezone: str = 'Asia/Shanghai'
+    fetch_lookback_hours: int = Field(ge=1, le=168)
+    push_provider: str = 'pushplus'
+    pushplus_token: str | None = None

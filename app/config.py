@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     whisper_base_url: str = Field(default='https://api.openai.com/v1', alias='WHISPER_BASE_URL')
     whisper_model: str = Field(default='whisper-large-v3', alias='WHISPER_MODEL')
 
+    pushplus_token: str = Field(default='', alias='PUSHPLUS_TOKEN')
     wecom_webhook_url: str = Field(default='', alias='WECOM_WEBHOOK_URL')
     database_url: str = Field(default='sqlite+aiosqlite:///./ai_news.db', alias='DATABASE_URL')
     target_up_ids_raw: str = Field(default='', alias='TARGET_UP_IDS')
@@ -29,6 +30,7 @@ class Settings(BaseSettings):
     daily_report_minute: int = Field(default=0, alias='DAILY_REPORT_MINUTE')
     fetch_lookback_hours: int = Field(default=24, alias='FETCH_LOOKBACK_HOURS')
     scheduler_timezone: str = Field(default='Asia/Shanghai', alias='SCHEDULER_TIMEZONE')
+    seed_default_monitor_sources: bool = Field(default=True, alias='SEED_DEFAULT_MONITOR_SOURCES')
 
     model_config = SettingsConfigDict(
         env_file='.env',
@@ -54,6 +56,15 @@ class Settings(BaseSettings):
     @property
     def whisper_transcriptions_url(self) -> str:
         return self.whisper_base_url.rstrip('/') + '/audio/transcriptions'
+
+    @property
+    def has_valid_wecom_webhook(self) -> bool:
+        prefix = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key='
+        return self.wecom_webhook_url.startswith(prefix) and len(self.wecom_webhook_url) > len(prefix)
+
+    @property
+    def has_valid_pushplus_token(self) -> bool:
+        return len(self.pushplus_token.strip()) >= 16
 
     def masked_dict(self) -> dict:
         data = self.model_dump(by_alias=True)

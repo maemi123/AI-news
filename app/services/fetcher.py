@@ -26,6 +26,7 @@ class FetcherError(RuntimeError):
 class SourceFetchResult:
     source: MonitorSource
     items: list[RawContent]
+    error: str | None = None
 
 
 class FetcherService:
@@ -77,14 +78,31 @@ class FetcherService:
     ) -> list[RawContent]:
         sources = await self.get_active_sources(session, force_reload=force_reload)
         contents: list[RawContent] = []
+        failed_sources: list[str] = []
 
         for source in sources:
             try:
                 items = await self.fetch_source_content(source, hours=hours)
             except Exception as exc:
-                LOGGER.exception('Failed to fetch source %s (%s)', source.name, source.platform)
-                raise FetcherError(f'Failed to fetch source {source.name}: {exc}') from exc
+                LOGGER.warning(
+                    'Skipping source %s (%s) because fetching failed: %s',
+                    source.name,
+                    source.platform,
+                    exc,
+                )
+                failed_sources.append(f'{source.name} ({source.platform}): {exc}')
+                continue
             contents.extend(items)
+
+        if failed_sources:
+            LOGGER.warning('Fetch completed with %s failed source(s)', len(failed_sources))
+            for message in failed_sources[:10]:
+                LOGGER.warning('Source failure: %s', message)
+        if not contents and failed_sources:
+            raise FetcherError(
+                'All monitored sources failed to fetch. First failures: '
+                + '; '.join(failed_sources[:3])
+            )
 
         return contents
 
