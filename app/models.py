@@ -1,8 +1,9 @@
-﻿﻿from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from app.utils.helpers import utcnow
@@ -10,6 +11,29 @@ from app.utils.helpers import utcnow
 
 class Base(DeclarativeBase):
     pass
+
+
+class MonitorSource(Base):
+    __tablename__ = 'monitor_sources'
+    __table_args__ = (
+        UniqueConstraint('platform', 'platform_id', name='uq_monitor_source_platform_platform_id'),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    platform: Mapped[str] = mapped_column(String(50), index=True)
+    platform_id: Mapped[str] = mapped_column(String(100))
+    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    rss_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    category: Mapped[str] = mapped_column(String(50), default='kol', index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    importance_weight: Mapped[int] = mapped_column(Integer, default=1)
+    last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    extra_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    processed_contents: Mapped[list[ProcessedContent]] = relationship(back_populates='source')
 
 
 class Video(Base):
@@ -44,11 +68,48 @@ class Summary(Base):
     title: Mapped[str] = mapped_column(String(500))
     summary_text: Mapped[str] = mapped_column(Text)
     category: Mapped[str] = mapped_column(String(100), index=True)
-    key_entities: Mapped[list] = mapped_column(JSON, default=list)
-    tags: Mapped[list] = mapped_column(JSON, default=list)
-    structured_notes: Mapped[dict] = mapped_column(JSON, default=dict)
-    raw_response: Mapped[dict] = mapped_column(JSON, default=dict)
+    key_entities: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    structured_notes: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    raw_response: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     video: Mapped[Video] = relationship(back_populates='summary')
+
+
+class ProcessedContent(Base):
+    __tablename__ = 'processed_contents'
+    __table_args__ = (
+        UniqueConstraint('platform', 'original_id', name='uq_processed_content_platform_original_id'),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    source_id: Mapped[int | None] = mapped_column(
+        ForeignKey('monitor_sources.id', ondelete='SET NULL'),
+        nullable=True,
+        index=True,
+    )
+    source_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    platform: Mapped[str] = mapped_column(String(50), index=True)
+
+    original_id: Mapped[str] = mapped_column(String(200), index=True)
+    title: Mapped[str] = mapped_column(String(500))
+    content: Mapped[str | None] = mapped_column(String(5000), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+    summary: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    importance_stars: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    importance_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    key_entities: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    is_duplicate: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    duplicate_of: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    source: Mapped[MonitorSource | None] = relationship(back_populates='processed_contents')

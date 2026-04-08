@@ -1,4 +1,4 @@
-﻿﻿import json
+﻿import json
 import logging
 import re
 from typing import Any
@@ -9,14 +9,14 @@ from app.config import get_settings
 
 LOGGER = logging.getLogger(__name__)
 CATEGORIES = [
-    '新模型发布',
-    '融资并购',
-    '政策法规',
-    '产品更新',
-    '学术论文',
-    '行业观点',
-    '教程分享',
-    '其他',
+    'new_model_release',
+    'funding_merger',
+    'policy_regulation',
+    'product_update',
+    'research_paper',
+    'industry_viewpoint',
+    'tutorial_share',
+    'other',
 ]
 
 
@@ -28,11 +28,11 @@ class AIProcessor:
     def __init__(self) -> None:
         self.settings = get_settings()
 
-    async def generate_summary(self, *, title: str, content: str) -> dict[str, Any]:
+    async def generate_summary(self, *, title: str, content: str, source_weight: int = 1) -> dict[str, Any]:
         if not self.settings.deepseek_api_key:
-            raise AIProcessorError('未配置 DEEPSEEK_API_KEY，无法调用摘要服务。')
+            raise AIProcessorError('DEEPSEEK_API_KEY is not configured.')
 
-        prompt = self._build_prompt(title=title, content=content)
+        prompt = self._build_prompt(title=title, content=content, source_weight=source_weight)
         payload = {
             'model': self.settings.deepseek_model,
             'temperature': 0.2,
@@ -40,7 +40,9 @@ class AIProcessor:
             'messages': [
                 {
                     'role': 'system',
-                    'content': '你是AI资讯分析助手。请严格输出JSON对象，不要输出额外解释。',
+                    'content': (
+                        'You are an AI news analyst. Reply with a single JSON object and no extra prose.'
+                    ),
                 },
                 {'role': 'user', 'content': prompt},
             ],
@@ -61,45 +63,58 @@ class AIProcessor:
                 data = response.json()
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text[:500]
-            LOGGER.exception('DeepSeek 接口返回异常: %s', detail)
-            raise AIProcessorError(f'DeepSeek 接口返回异常: {detail}') from exc
+            LOGGER.exception('DeepSeek returned an error: %s', detail)
+            raise AIProcessorError(f'DeepSeek returned an error: {detail}') from exc
         except httpx.HTTPError as exc:
-            LOGGER.exception('DeepSeek 请求失败')
-            raise AIProcessorError(f'DeepSeek 请求失败: {exc}') from exc
+            LOGGER.exception('DeepSeek request failed')
+            raise AIProcessorError(f'DeepSeek request failed: {exc}') from exc
 
         try:
             content_text = data['choices'][0]['message']['content']
         except (KeyError, IndexError, TypeError) as exc:
-            raise AIProcessorError('DeepSeek 返回结构不符合预期。') from exc
+            raise AIProcessorError('DeepSeek response structure is invalid.') from exc
 
         parsed = self._parse_json(content_text)
         return self._normalize_result(parsed, fallback_title=title)
 
-    def _build_prompt(self, *, title: str, content: str) -> str:
+    def _build_prompt(self, *, title: str, content: str, source_weight: int) -> str:
         excerpt = content.strip()[:12000]
         categories_json = json.dumps(CATEGORIES, ensure_ascii=False)
-        return f'''请基于以下视频文字内容，生成结构化摘要与分类。
+        source_weight = max(1, min(source_weight, 5))
+        return f'''Read the following AI industry content and return a valid JSON object.
 
-分类只能从以下列表中选择一个：{categories_json}
+Allowed categories: {categories_json}
 
-输出必须是合法 JSON，对象字段必须完整，字段结构如下：
+Use the source weight as one input for importance scoring.
+Source importance weight: {source_weight} (1-5)
+
+Importance scoring rules:
+- 5 stars: major model releases, large funding, policy shifts, major product launches.
+- 4 stars: strong industry impact, widely useful product updates, notable research.
+- 3 stars: useful but moderate impact updates.
+- 2 stars: niche updates or limited impact.
+- 1 star: low signal or routine information.
+
+Required JSON shape:
 {{
-  "title": "视频标题",
-  "summary": "3-5句话的核心内容摘要，200字以内",
-  "category": "新模型发布",
-  "key_entities": ["DeepSeek", "GPT-4", "OpenAI"],
-  "tags": ["大模型", "开源", "评测"],
+  "title": "content title",
+  "summary": "3-5 sentence summary, under 200 Chinese characters if possible",
+  "category": "one allowed category",
+  "importance_stars": 4,
+  "importance_reason": "short reason for the score",
+  "key_entities": ["entity1", "entity2"],
+  "tags": ["tag1", "tag2"],
   "structured_notes": {{
-    "core_concept": "视频核心概念一句话总结",
-    "key_points": ["要点1", "要点2", "要点3"],
-    "code_or_example": "如果视频中有代码或示例，提取出来；没有则填空字符串",
-    "reference_links": ["相关链接1", "相关链接2"]
+    "core_concept": "one sentence core idea",
+    "key_points": ["point1", "point2", "point3"],
+    "code_or_example": "example text or empty string",
+    "reference_links": ["https://example.com"]
   }}
 }}
 
-视频标题：{title}
+Title: {title}
 
-视频文字内容：
+Content:
 {excerpt}
 '''
 
@@ -111,16 +126,16 @@ class AIProcessor:
         try:
             parsed = json.loads(cleaned)
         except json.JSONDecodeError as exc:
-            LOGGER.error('LLM 返回无法解析为 JSON: %s', content_text)
-            raise AIProcessorError('LLM 返回内容不是合法 JSON。') from exc
+            LOGGER.error('LLM output is not valid JSON: %s', content_text)
+            raise AIProcessorError('LLM output is not valid JSON.') from exc
         if not isinstance(parsed, dict):
-            raise AIProcessorError('LLM 返回内容不是 JSON 对象。')
+            raise AIProcessorError('LLM output is not a JSON object.')
         return parsed
 
     def _normalize_result(self, parsed: dict[str, Any], *, fallback_title: str) -> dict[str, Any]:
-        category = parsed.get('category') or '其他'
+        category = str(parsed.get('category') or 'other')
         if category not in CATEGORIES:
-            category = '其他'
+            category = 'other'
 
         structured_notes = parsed.get('structured_notes')
         if not isinstance(structured_notes, dict):
@@ -134,10 +149,19 @@ class AIProcessor:
         if not isinstance(reference_links, list):
             reference_links = []
 
+        importance_stars = parsed.get('importance_stars', 1)
+        try:
+            importance_stars = int(importance_stars)
+        except (TypeError, ValueError):
+            importance_stars = 1
+        importance_stars = max(1, min(importance_stars, 5))
+
         return {
             'title': str(parsed.get('title') or fallback_title),
             'summary': str(parsed.get('summary') or '').strip(),
             'category': category,
+            'importance_stars': importance_stars,
+            'importance_reason': str(parsed.get('importance_reason') or '').strip(),
             'key_entities': [str(item) for item in parsed.get('key_entities', []) if str(item).strip()],
             'tags': [str(item) for item in parsed.get('tags', []) if str(item).strip()],
             'structured_notes': {

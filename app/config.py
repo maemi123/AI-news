@@ -1,4 +1,4 @@
-import json
+﻿import json
 from functools import lru_cache
 from typing import List
 
@@ -18,11 +18,17 @@ class Settings(BaseSettings):
 
     whisper_api_key: str = Field(default='', alias='WHISPER_API_KEY')
     whisper_base_url: str = Field(default='https://api.openai.com/v1', alias='WHISPER_BASE_URL')
-    whisper_model: str = Field(default='whisper-1', alias='WHISPER_MODEL')
+    whisper_model: str = Field(default='whisper-large-v3', alias='WHISPER_MODEL')
 
     wecom_webhook_url: str = Field(default='', alias='WECOM_WEBHOOK_URL')
     database_url: str = Field(default='sqlite+aiosqlite:///./ai_news.db', alias='DATABASE_URL')
     target_up_ids_raw: str = Field(default='', alias='TARGET_UP_IDS')
+
+    scheduler_enabled: bool = Field(default=True, alias='SCHEDULER_ENABLED')
+    daily_report_hour: int = Field(default=8, alias='DAILY_REPORT_HOUR')
+    daily_report_minute: int = Field(default=0, alias='DAILY_REPORT_MINUTE')
+    fetch_lookback_hours: int = Field(default=24, alias='FETCH_LOOKBACK_HOURS')
+    scheduler_timezone: str = Field(default='Asia/Shanghai', alias='SCHEDULER_TIMEZONE')
 
     model_config = SettingsConfigDict(
         env_file='.env',

@@ -1,4 +1,4 @@
-const form = document.getElementById("process-form");
+﻿const form = document.getElementById("process-form");
 const input = document.getElementById("bv-id");
 const submitBtn = document.getElementById("submit-btn");
 const statusBox = document.getElementById("status-box");
@@ -23,7 +23,7 @@ function clearCards() {
   errorCard.classList.add("hidden");
 }
 
-function fillTags(containerId, items) {
+function renderTags(containerId, items) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
 
@@ -40,13 +40,13 @@ function fillTags(containerId, items) {
   });
 }
 
-function fillPoints(points) {
+function renderPoints(points) {
   const list = document.getElementById("result-points");
   list.innerHTML = "";
 
   if (!points || points.length === 0) {
     const item = document.createElement("li");
-    item.textContent = "暂无提取到明显要点";
+    item.textContent = "暂无提炼出的重点。";
     list.appendChild(item);
     return;
   }
@@ -66,7 +66,7 @@ function renderResult(data) {
   document.getElementById("result-bv").textContent = data.bv_id || "-";
   document.getElementById("result-source").textContent =
     data.transcript_source === "subtitle"
-      ? "B站 CC 字幕"
+      ? "B 站 CC 字幕"
       : data.transcript_source === "whisper"
         ? "Whisper 音频转写"
         : "未知";
@@ -74,9 +74,9 @@ function renderResult(data) {
   document.getElementById("result-core").textContent = notes.core_concept || "暂无核心概念";
   document.getElementById("result-example").textContent = notes.code_or_example || "暂无示例内容";
 
-  fillTags("result-entities", data.key_entities || []);
-  fillTags("result-tags", data.tags || []);
-  fillPoints(notes.key_points || []);
+  renderTags("result-entities", data.key_entities || []);
+  renderTags("result-tags", data.tags || []);
+  renderPoints(notes.key_points || []);
 
   resultCard.classList.remove("hidden");
 }
@@ -86,13 +86,13 @@ function renderError(detail, fallbackMessage) {
   const hint = typeof detail === "object" ? detail?.hint : "";
 
   errorMessage.textContent = message || "处理失败，请稍后再试。";
-  errorHint.textContent = hint || "请先检查 BV 号、`.env` 配置和网络连接。";
+  errorHint.textContent = hint || "请检查 BV 号、.env 配置和服务日志。";
   errorCard.classList.remove("hidden");
 }
 
 async function processVideo(bvId) {
   clearCards();
-  setStatus("loading", "处理中", "正在抓取视频信息。若没有字幕，系统会自动下载音频并转写，可能需要几十秒到几分钟。");
+  setStatus("loading", "处理中", "正在抓取视频信息并生成结构化摘要，这一步可能需要几十秒。");
   submitBtn.disabled = true;
   submitBtn.textContent = "处理中...";
 
@@ -106,26 +106,25 @@ async function processVideo(bvId) {
     if (contentType.includes("application/json")) {
       data = await response.json();
     } else {
-      const text = await response.text();
       data = {
         detail: {
-          message: text || "服务返回了非 JSON 响应",
-          hint: "后端可能抛出了未处理异常，请查看终端日志。",
+          message: await response.text() || "服务返回了非 JSON 响应。",
+          hint: "请查看后端日志确认是否有未处理异常。",
         },
       };
     }
 
     if (!response.ok) {
       renderError(data.detail, "接口返回异常");
-      setStatus("error", "处理失败", "请看下方错误提示，通常按建议修改后重新处理即可。");
+      setStatus("error", "处理失败", "下方已经展示错误信息，可以根据提示修复后重试。");
       return;
     }
 
     renderResult(data);
-    setStatus("success", "处理完成", "已经成功生成摘要和分类，结果就在下方。");
+    setStatus("success", "处理完成", "摘要、分类和结构化笔记已经生成完成。")
   } catch (error) {
     renderError("", error.message);
-    setStatus("error", "请求失败", "页面请求没有成功完成，请检查后端服务是否正常、网络是否可用，以及终端是否出现异常日志。");
+    setStatus("error", "请求失败", "页面请求没有成功完成，请检查后端服务、网络和终端日志。")
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = "开始处理";
@@ -138,7 +137,7 @@ form.addEventListener("submit", async (event) => {
 
   if (!bvId) {
     clearCards();
-    setStatus("error", "请输入 BV 号", "例如 `BV1xx411c7mD`。输入后再点击开始处理。");
+    setStatus("error", "请输入 BV 号", "例如 BV1xx411c7mD。输入后再开始处理。");
     return;
   }
 

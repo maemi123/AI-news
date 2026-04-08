@@ -1,0 +1,152 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>监控管理台</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/">AI News Ops</a>
+      <nav class="nav-links">
+        <a href="/">单视频测试</a>
+        <a href="/docs" target="_blank" rel="noreferrer">接口文档</a>
+      </nav>
+    </header>
+
+    <main class="dashboard-layout">
+      <section class="dashboard-hero glow-panel">
+        <div>
+          <p class="eyebrow">Monitor center</p>
+          <h1>管理监控源，手动抓取内容，并查看已处理时讯。</h1>
+          <p class="lead small">
+            这个页面会直接调用新的监控源 CRUD API、抓取 API、统计 API 和内容查询 API。适合先把数据流跑顺，再接更复杂的前端展示。
+          </p>
+        </div>
+        <div class="hero-actions compact-actions">
+          <button id="refresh-all-btn" class="btn secondary" type="button">刷新数据</button>
+          <button id="fetch-now-btn" class="btn" type="button">立即采集</button>
+          <button id="push-test-btn" class="btn ghost" type="button">测试推送</button>
+        </div>
+      </section>
+
+      <section class="stats-grid" id="stats-grid">
+        <article class="metric-card">
+          <span class="metric-label">启用监控源</span>
+          <strong id="stat-active-sources">0</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">已处理内容</span>
+          <strong id="stat-total-contents">0</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">今日新增</span>
+          <strong id="stat-today-contents">0</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">重复内容</span>
+          <strong id="stat-duplicates">0</strong>
+        </article>
+      </section>
+
+      <section id="action-status" class="status status-idle inline-status">
+        <span class="status-dot"></span>
+        <div>
+          <p class="status-title">准备就绪</p>
+          <p class="status-text">你可以添加监控源，或者立刻触发一次全量采集。</p>
+        </div>
+      </section>
+
+      <section class="two-column-layout">
+        <section class="card">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">Source editor</p>
+              <h2 id="form-title">新增监控源</h2>
+            </div>
+          </div>
+          <form id="source-form" class="stack-form dense-form">
+            <label for="source-name">名称</label>
+            <input id="source-name" name="name" type="text" placeholder="例如：量子位">
+
+            <label for="source-platform">平台</label>
+            <select id="source-platform" name="platform">
+              <option value="bilibili">Bilibili</option>
+              <option value="weibo">Weibo</option>
+              <option value="twitter">X / Twitter</option>
+            </select>
+
+            <label for="source-platform-id">平台 ID</label>
+            <input id="source-platform-id" name="platform_id" type="text" placeholder="UID、用户名或站点标识">
+
+            <label for="source-category">分类</label>
+            <select id="source-category" name="category">
+              <option value="kol">KOL</option>
+              <option value="company">Company</option>
+              <option value="academic">Academic</option>
+            </select>
+
+            <label for="source-weight">权重</label>
+            <input id="source-weight" name="importance_weight" type="number" min="1" max="5" value="1">
+
+            <label for="source-url">主页链接</label>
+            <input id="source-url" name="source_url" type="url" placeholder="可选，原始主页链接">
+
+            <label for="source-rss-url">RSSHub / RSS 链接</label>
+            <input id="source-rss-url" name="rss_url" type="url" placeholder="微博和 X 推荐填写，B 站可选">
+
+            <div class="form-actions">
+              <button id="save-source-btn" class="btn" type="submit">保存监控源</button>
+              <button id="reset-source-btn" class="btn secondary" type="button">清空表单</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">Source list</p>
+              <h2>监控对象</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th>平台</th>
+                  <th>ID</th>
+                  <th>分类</th>
+                  <th>权重</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="source-table-body">
+                <tr><td colspan="7" class="empty-row">暂无监控源</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Recent content</p>
+            <h2>最新处理内容</h2>
+          </div>
+          <div id="category-summary" class="mini-tags"></div>
+        </div>
+        <div id="content-list" class="content-stream">
+          <article class="stream-empty">还没有处理内容，先添加监控源并执行一次采集。</article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/manage.js"></script>
+</body>
+</html>

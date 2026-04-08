@@ -1,1 +1,1 @@
-﻿# Utility package.
+# Utility package.
