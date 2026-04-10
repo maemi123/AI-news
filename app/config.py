@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     bilibili_sessdata: str = Field(default='', alias='BILIBILI_SESSDATA')
     bilibili_bili_jct: str = Field(default='', alias='BILIBILI_BILI_JCT')
     bilibili_buvid3: str = Field(default='', alias='BILIBILI_BUVID3')
+    weibo_cookies: str = Field(default='', alias='WEIBO_COOKIES')
 
     deepseek_api_key: str = Field(default='', alias='DEEPSEEK_API_KEY')
     deepseek_base_url: str = Field(default='https://api.deepseek.com/v1', alias='DEEPSEEK_BASE_URL')
@@ -92,6 +93,13 @@ class Settings(BaseSettings):
         return value
 
     @property
+    def effective_weibo_cookies(self) -> str:
+        value = self.weibo_cookies.strip()
+        if not value or value.lower() in PLACEHOLDER_SECRET_VALUES:
+            return ''
+        return value
+
+    @property
     def has_valid_wecom_webhook(self) -> bool:
         prefix = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key='
         return self.wecom_webhook_url.startswith(prefix) and len(self.wecom_webhook_url) > len(prefix)
@@ -117,6 +125,7 @@ class Settings(BaseSettings):
             'BILIBILI_SESSDATA',
             'BILIBILI_BILI_JCT',
             'BILIBILI_BUVID3',
+            'WEIBO_COOKIES',
             'WECOM_WEBHOOK_URL',
         ):
             value = data.get(key, '')

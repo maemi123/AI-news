@@ -166,6 +166,16 @@ class FetcherService:
                 'Weibo monitoring requires a numeric uid. Current platform_id is not a uid, '
                 'so this source cannot be fetched reliably.'
             )
+        if self.settings.effective_weibo_cookies:
+            try:
+                return await self._fetch_weibo_direct(source, cutoff=cutoff)
+            except FetcherError as exc:
+                LOGGER.warning(
+                    'Direct Weibo fetch failed for %s (%s), falling back to RSS: %s',
+                    source.name,
+                    source.platform_id,
+                    exc,
+                )
         rss_url = self._resolve_rss_url(source)
         if not rss_url:
             raise FetcherError(f'RSS url is required for platform {source.platform}')
@@ -285,6 +295,92 @@ class FetcherService:
         if not platform_id:
             return None
         return f'{rsshub_base_url}/bilibili/user/video/{platform_id}'
+
+    async def _fetch_weibo_direct(
+        self,
+        source: MonitorSource,
+        *,
+        cutoff: datetime | None = None,
+    ) -> list[RawContent]:
+        uid = source.platform_id.strip()
+        if not uid:
+            raise FetcherError('Weibo uid is required')
+
+        headers = {
+            'User-Agent': (
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) '
+                'Chrome/123.0.0.0 Safari/537.36'
+            ),
+            'Referer': f'https://weibo.com/u/{uid}',
+            'Cookie': self.settings.effective_weibo_cookies,
+            'X-Requested-With': 'XMLHttpRequest',
+        }
+        url = f'https://weibo.com/ajax/statuses/mymblog?uid={uid}&page=1&feature=0'
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.HTTPError as exc:
+            raise FetcherError(f'Failed to fetch Weibo API: {exc}') from exc
+        except ValueError as exc:
+            raise FetcherError('Weibo API returned invalid JSON') from exc
+
+        items = ((payload.get('data') or {}).get('list')) or []
+        if not isinstance(items, list):
+            raise FetcherError('Weibo API returned an unexpected payload')
+
+        results: list[RawContent] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            published_at = self._parse_weibo_datetime(item.get('created_at'))
+            if not self._is_after_cutoff(published_at, cutoff):
+                continue
+
+            text = self._clean_rss_text(item.get('text_raw') or item.get('text') or '')
+            if not text:
+                continue
+
+            title = text[:80]
+            mblog_id = str(item.get('mblogid') or item.get('idstr') or item.get('id') or '').strip()
+            original_id = str(item.get('idstr') or item.get('id') or mblog_id).strip()
+            url_value = f'https://weibo.com/{uid}/{mblog_id}' if mblog_id else None
+            user = item.get('user') or {}
+            author = self._clean_rss_text(user.get('screen_name') or '') or source.name
+
+            if not original_id:
+                continue
+
+            results.append(
+                RawContent(
+                    source_id=source.id,
+                    source_name=source.name,
+                    source_category=source.category,
+                    importance_weight=source.importance_weight,
+                    platform='weibo',
+                    original_id=original_id,
+                    title=title,
+                    content=text,
+                    url=url_value,
+                    published_at=published_at,
+                    author=author,
+                    metadata={'source_url': source.source_url or '', 'weibo_uid': uid},
+                )
+            )
+        return results
+
+    def _parse_weibo_datetime(self, value: Any) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.strptime(str(value), '%a %b %d %H:%M:%S %z %Y')
+        except ValueError:
+            return None
+        return parsed.astimezone(timezone.utc)
 
     def _clean_rss_text(self, value: str) -> str:
         text = html.unescape(str(value or '').strip())

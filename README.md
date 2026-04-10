@@ -10,13 +10,13 @@
 - 使用大模型生成摘要、分类、重要性评分
 - 将处理结果落库，并记录每个监控源最近一次抓取状态
 - 通过 PushPlus 推送测试消息和日报
-- 支持自建 RSSHub，为 X / Twitter、微博等平台提供 RSS 抓取能力
+- 支持自建 RSSHub，为 X / Twitter 以及部分 B 站场景提供抓取能力
 
 ## 当前平台状态
 
-- X / Twitter：当前最稳定，推荐优先使用自建 RSSHub
+- X / Twitter：依赖自建 RSSHub 和可用的出海网络，网络不可达时会整体失败
 - B 站：可用，但存在明显风控波动，成功率受账号、时间窗和请求频率影响
-- 微博：理论可做，但强依赖有效登录态 cookie 和数字 uid；如果 cookie 失效会直接抓取失败
+- 微博：当前已支持项目内直连微博接口抓取，强依赖有效登录态 cookie 和数字 uid
 
 ## 技术栈
 
@@ -127,6 +127,7 @@ uvicorn app.main:app --reload
 ### 自建 RSSHub
 
 - `RSSHUB_BASE_URL`
+- `WEIBO_COOKIES`
 
 ## 自建 RSSHub
 
@@ -138,7 +139,8 @@ uvicorn app.main:app --reload
 4. 启动 RSSHub
 5. 在项目根目录 `.env` 中设置 `RSSHUB_BASE_URL=http://127.0.0.1:1200`
 
-应用在抓取微博和 X / Twitter 时会自动优先走自建 RSSHub，不需要逐条改数据库里的 `rss_url`。
+应用在抓取 X / Twitter 时会自动优先走自建 RSSHub，不需要逐条改数据库里的 `rss_url`。
+微博当前优先走项目内直连接口抓取，只有在未配置项目主 `.env` 中的 `WEIBO_COOKIES` 时才会退回 RSS 方案。
 
 ## 运行逻辑说明
 
@@ -165,24 +167,15 @@ uvicorn app.main:app --reload
 ### X / Twitter 抓取策略
 
 - 优先使用自建 RSSHub `/twitter/user/:id`
-- 配合 Twitter 登录态后，当前是全项目里最稳定的一路来源
+- 配合 Twitter 登录态和可用的出海网络后可稳定工作
+- 如果本机无法访问 `https://x.com`，则这一路会直接失败
 
 ### 微博抓取策略
 
-- 使用自建 RSSHub `/weibo/user/:uid`
+- 优先使用项目内直连微博接口
 - 必须是数字 uid
-- 必须提供对 RSSHub 可用的微博 cookie
-
-## GitHub 部署建议
-
-如果你准备把项目公开到 GitHub，建议：
-
-- 不要提交 `.env`
-- 不要提交 `rsshub/.env`
-- 不要提交任何浏览器 cookie、token、密码
-- 使用 `.env.example` 提供占位配置
-- 在 README 里明确说明微博和 X / Twitter 依赖登录态
-- 把 `.codex/` 这类本地代理工作目录忽略掉
+- 必须提供有效的 `WEIBO_COOKIES`
+- 当直连接口不可用时，才会尝试 RSS 路径
 
 ## 已知限制
 
@@ -190,6 +183,7 @@ uvicorn app.main:app --reload
 - B 站风控较强，部分账号会间歇性失败
 - 即使来源账号本身是 AI 圈人物，也不能保证每条动态都与 AI 相关
 - 上游平台规则变化会直接影响抓取稳定性
+- X / Twitter 对本机网络环境要求高，是否能访问 `x.com` 会直接影响结果
 
 ## 适合的使用方式
 
