@@ -61,9 +61,11 @@ class ContentPipelineService:
     ) -> FetchRunResponse:
         try:
             sources = await self.fetcher.get_active_sources(session, force_reload=force_reload)
-            raw_contents = await self.fetcher.fetch_all_sources(session, hours=hours, force_reload=force_reload)
+            source_results = await self.fetcher.fetch_source_results(sources, hours=hours)
         except FetcherError as exc:
             raise ContentPipelineError(str(exc)) from exc
+        raw_contents = [item for result in source_results for item in result.items]
+        failed_sources = [result for result in source_results if result.error]
 
         existing_result = await session.execute(
             select(ProcessedContent).where(
@@ -96,21 +98,20 @@ class ContentPipelineService:
                 LOGGER.info('Skipping non-AI content: %s', decision.content.title)
                 continue
 
-            processed = ProcessedContent(
-                source_id=decision.content.source_id,
-                source_name=decision.content.source_name,
-                platform=decision.content.platform,
-                original_id=decision.content.original_id,
-                title=decision.content.title,
-                content=decision.content.content or '',
-                url=decision.content.url,
-                published_at=decision.content.published_at,
-                is_duplicate=decision.is_duplicate,
-                duplicate_of=decision.duplicate_of,
-                collected_at=utcnow(),
-            )
-
             if decision.is_duplicate:
+                processed = ProcessedContent(
+                    source_id=decision.content.source_id,
+                    source_name=decision.content.source_name,
+                    platform=decision.content.platform,
+                    original_id=decision.content.original_id,
+                    title=decision.content.title,
+                    content=decision.content.content or '',
+                    url=decision.content.url,
+                    published_at=decision.content.published_at,
+                    is_duplicate=decision.is_duplicate,
+                    duplicate_of=decision.duplicate_of,
+                    collected_at=utcnow(),
+                )
                 duplicate_items += 1
             else:
                 try:
@@ -122,6 +123,28 @@ class ContentPipelineService:
                 except AIProcessorError as exc:
                     LOGGER.exception('AI processing failed for %s', decision.content.title)
                     raise ContentPipelineError(f'AI processing failed: {exc}') from exc
+
+                if not ai_result.get('is_ai_relevant', True):
+                    LOGGER.info(
+                        'Skipping AI-irrelevant content after model review: %s (%s)',
+                        decision.content.title,
+                        ai_result.get('relevance_reason') or 'no reason',
+                    )
+                    continue
+
+                processed = ProcessedContent(
+                    source_id=decision.content.source_id,
+                    source_name=decision.content.source_name,
+                    platform=decision.content.platform,
+                    original_id=decision.content.original_id,
+                    title=ai_result.get('title') or decision.content.title,
+                    content=decision.content.content or '',
+                    url=decision.content.url,
+                    published_at=decision.content.published_at,
+                    is_duplicate=decision.is_duplicate,
+                    duplicate_of=decision.duplicate_of,
+                    collected_at=utcnow(),
+                )
 
                 processed.summary = ai_result.get('summary') or ''
                 processed.category = ai_result.get('category') or 'other'
@@ -142,9 +165,26 @@ class ContentPipelineService:
             stored_items += 1
 
         now = utcnow()
-        for source in sources:
-            source.last_fetched_at = now
+        for result in source_results:
+            source = result.source
+            extra_config = dict(source.extra_config or {})
+            extra_config['last_checked_at'] = now.isoformat()
+            extra_config['last_fetch_status'] = 'error' if result.error else 'ok'
+            extra_config['last_fetch_error'] = result.error
+            extra_config['last_fetch_count'] = len(result.items)
+            source.extra_config = extra_config
+            if not result.error:
+                source.last_fetched_at = now
         await session.commit()
+
+        if not raw_contents and failed_sources:
+            raise ContentPipelineError(
+                'All monitored sources failed to fetch. First failures: '
+                + '; '.join(
+                    f'{result.source.name} ({result.source.platform}): {result.error}'
+                    for result in failed_sources[:3]
+                )
+            )
 
         return FetchRunResponse(
             sources_checked=len(sources),

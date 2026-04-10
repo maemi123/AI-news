@@ -1,15 +1,18 @@
 ﻿from __future__ import annotations
 
+import html
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models import MonitorSource
 from app.schemas import RawContent
 from app.services.bilibili_service import BilibiliAPIError, BilibiliService
@@ -34,6 +37,7 @@ class FetcherService:
     _cache_expire_at: datetime | None = None
 
     def __init__(self, bilibili_service: BilibiliService | None = None) -> None:
+        self.settings = get_settings()
         self.bilibili_service = bilibili_service or BilibiliService()
 
     @classmethod
@@ -69,17 +73,13 @@ class FetcherService:
 
         raise FetcherError(f'Unsupported platform: {source.platform}')
 
-    async def fetch_all_sources(
+    async def fetch_source_results(
         self,
-        session: AsyncSession,
+        sources: list[MonitorSource],
         *,
         hours: int = 24,
-        force_reload: bool = False,
-    ) -> list[RawContent]:
-        sources = await self.get_active_sources(session, force_reload=force_reload)
-        contents: list[RawContent] = []
-        failed_sources: list[str] = []
-
+    ) -> list[SourceFetchResult]:
+        results: list[SourceFetchResult] = []
         for source in sources:
             try:
                 items = await self.fetch_source_content(source, hours=hours)
@@ -90,9 +90,26 @@ class FetcherService:
                     source.platform,
                     exc,
                 )
-                failed_sources.append(f'{source.name} ({source.platform}): {exc}')
+                results.append(SourceFetchResult(source=source, items=[], error=str(exc)))
                 continue
-            contents.extend(items)
+            results.append(SourceFetchResult(source=source, items=items))
+        return results
+
+    async def fetch_all_sources(
+        self,
+        session: AsyncSession,
+        *,
+        hours: int = 24,
+        force_reload: bool = False,
+    ) -> list[RawContent]:
+        sources = await self.get_active_sources(session, force_reload=force_reload)
+        results = await self.fetch_source_results(sources, hours=hours)
+        contents = [item for result in results for item in result.items]
+        failed_sources = [
+            f'{result.source.name} ({result.source.platform}): {result.error}'
+            for result in results
+            if result.error
+        ]
 
         if failed_sources:
             LOGGER.warning('Fetch completed with %s failed source(s)', len(failed_sources))
@@ -113,6 +130,15 @@ class FetcherService:
         try:
             videos = await self.bilibili_service.get_user_videos(source.platform_id)
         except BilibiliAPIError as exc:
+            rsshub_bilibili_url = self._resolve_bilibili_rsshub_url(source)
+            if rsshub_bilibili_url:
+                LOGGER.warning(
+                    'Falling back to RSSHub for bilibili source %s (%s) after direct fetch failed: %s',
+                    source.name,
+                    source.platform_id,
+                    exc,
+                )
+                return await self._fetch_rss(source, cutoff=cutoff, rss_url=rsshub_bilibili_url)
             raise FetcherError(str(exc)) from exc
 
         return [
@@ -135,32 +161,53 @@ class FetcherService:
         ]
 
     async def fetch_weibo_user(self, source: MonitorSource, *, cutoff: datetime | None = None) -> list[RawContent]:
-        if not source.rss_url:
+        if not source.platform_id.strip().isdigit():
+            raise FetcherError(
+                'Weibo monitoring requires a numeric uid. Current platform_id is not a uid, '
+                'so this source cannot be fetched reliably.'
+            )
+        rss_url = self._resolve_rss_url(source)
+        if not rss_url:
             raise FetcherError(f'RSS url is required for platform {source.platform}')
-        return await self._fetch_rss(source, cutoff=cutoff)
+        return await self._fetch_rss(source, cutoff=cutoff, rss_url=rss_url)
 
     async def fetch_twitter_user(self, source: MonitorSource, *, cutoff: datetime | None = None) -> list[RawContent]:
-        if not source.rss_url:
+        rss_url = self._resolve_rss_url(source)
+        if not rss_url:
             raise FetcherError(f'RSS url is required for platform {source.platform}')
-        return await self._fetch_rss(source, cutoff=cutoff)
+        return await self._fetch_rss(source, cutoff=cutoff, rss_url=rss_url)
 
-    async def _fetch_rss(self, source: MonitorSource, *, cutoff: datetime | None = None) -> list[RawContent]:
+    async def _fetch_rss(
+        self,
+        source: MonitorSource,
+        *,
+        cutoff: datetime | None = None,
+        rss_url: str | None = None,
+    ) -> list[RawContent]:
         try:
             import feedparser
         except ImportError as exc:
             raise FetcherError('feedparser is not installed. Run pip install -r requirements.txt.') from exc
 
-        if not source.rss_url:
+        target_rss_url = (rss_url or source.rss_url or '').strip()
+        if not target_rss_url:
             raise FetcherError('rss_url is required for RSS fetching')
 
         try:
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                response = await client.get(source.rss_url)
+                response = await client.get(
+                    target_rss_url,
+                    headers={'User-Agent': 'Mozilla/5.0'},
+                )
                 response.raise_for_status()
         except httpx.HTTPError as exc:
             raise FetcherError(f'Failed to fetch RSS feed: {exc}') from exc
 
         parsed = feedparser.parse(response.text)
+        if self._is_xcancel_blocked(parsed, target_rss_url):
+            raise FetcherError(
+                'The configured X/Twitter RSS source is blocked by XCancel whitelist protection.'
+            )
         items: list[RawContent] = []
         for entry in parsed.entries:
             published_at = self._parse_entry_datetime(entry)
@@ -168,10 +215,10 @@ class FetcherService:
                 continue
 
             original_id = self._entry_original_id(entry)
-            title = str(getattr(entry, 'title', '') or '').strip()
-            summary = str(getattr(entry, 'summary', '') or getattr(entry, 'description', '') or '').strip()
+            title = self._clean_rss_text(getattr(entry, 'title', '') or '')
+            summary = self._clean_rss_text(getattr(entry, 'summary', '') or getattr(entry, 'description', '') or '')
             link = str(getattr(entry, 'link', '') or '').strip() or None
-            author = str(getattr(entry, 'author', '') or '').strip() or source.name
+            author = self._clean_rss_text(getattr(entry, 'author', '') or '') or source.name
 
             if not original_id or not title:
                 continue
@@ -189,7 +236,7 @@ class FetcherService:
                     url=link,
                     published_at=published_at,
                     author=author,
-                    metadata={'rss_url': source.rss_url, 'source_url': source.source_url or ''},
+                    metadata={'rss_url': target_rss_url, 'source_url': source.source_url or ''},
                 )
             )
         return items
@@ -210,6 +257,55 @@ class FetcherService:
             if candidate:
                 return candidate
         return ''
+
+    def _resolve_rss_url(self, source: MonitorSource) -> str | None:
+        platform = source.platform.lower().strip()
+        rss_url = (source.rss_url or '').strip()
+        rsshub_base_url = self.settings.effective_rsshub_base_url
+        platform_id = quote(source.platform_id.strip())
+
+        if platform == 'weibo':
+            if rsshub_base_url:
+                return f'{rsshub_base_url}/weibo/user/{platform_id}'
+            return rss_url or None
+
+        if platform in {'twitter', 'x'}:
+            if rsshub_base_url:
+                return f'{rsshub_base_url}/twitter/user/{platform_id}'
+            if rss_url and 'rsshub.app/twitter/' not in rss_url:
+                return rss_url
+            return f'https://rss.xcancel.com/{platform_id}/rss'
+        return rss_url or None
+
+    def _resolve_bilibili_rsshub_url(self, source: MonitorSource) -> str | None:
+        rsshub_base_url = self.settings.effective_rsshub_base_url
+        if not rsshub_base_url:
+            return None
+        platform_id = quote(source.platform_id.strip())
+        if not platform_id:
+            return None
+        return f'{rsshub_base_url}/bilibili/user/video/{platform_id}'
+
+    def _clean_rss_text(self, value: str) -> str:
+        text = html.unescape(str(value or '').strip())
+        if not text:
+            return ''
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            return text
+        return BeautifulSoup(text, 'html.parser').get_text(' ', strip=True)
+
+    def _is_xcancel_blocked(self, parsed: Any, rss_url: str) -> bool:
+        if 'rss.xcancel.com' not in rss_url:
+            return False
+        entries = list(getattr(parsed, 'entries', []) or [])
+        if len(entries) != 1:
+            return False
+        entry = entries[0]
+        title = str(getattr(entry, 'title', '') or '').lower()
+        summary = str(getattr(entry, 'summary', '') or '').lower()
+        return 'not yet whitelist' in title or 'not yet whitelist' in summary
 
     def _parse_entry_datetime(self, entry: Any) -> datetime | None:
         structured_time = getattr(entry, 'published_parsed', None) or getattr(entry, 'updated_parsed', None)

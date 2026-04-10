@@ -23,6 +23,8 @@ wheels/
 .installed.cfg
 *.egg
 .codex
+rsshub/README.md
+rsshub/.env
 
 # 环境变量和密钥
 .env

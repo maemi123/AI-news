@@ -7,7 +7,7 @@ import httpx
 
 from app.models import ProcessedContent
 
-PUSHPLUS_API = 'http://www.pushplus.plus/send'
+PUSHPLUS_API = 'https://www.pushplus.plus/send'
 
 
 class NotifierError(RuntimeError):

@@ -81,7 +81,7 @@ class AIProcessor:
         excerpt = content.strip()[:12000]
         categories_json = json.dumps(CATEGORIES, ensure_ascii=False)
         source_weight = max(1, min(source_weight, 5))
-        return f'''Read the following AI industry content and return a valid JSON object.
+        return f'''Read the following content and decide whether it is truly relevant to AI industry news. Return a valid JSON object only.
 
 Allowed categories: {categories_json}
 
@@ -95,19 +95,31 @@ Importance scoring rules:
 - 2 stars: niche updates or limited impact.
 - 1 star: low signal or routine information.
 
+Relevance rules:
+- Set "is_ai_relevant" to true only when the content is directly about AI models, AI products, AI companies, AI policy, AI research, AI chips, AI agents, AI tooling, robotics, autonomous driving, or core enabling infrastructure for AI.
+- Set "is_ai_relevant" to false for general politics, sports, entertainment, macro news, social commentary, personal life updates, or reposts that do not have clear AI relevance.
+- Being posted by a famous AI person does NOT automatically make the content AI relevant.
+
+Language rules:
+- All natural-language fields in the JSON must be written in Simplified Chinese.
+- If the original content is in English, translate and summarize it in Chinese.
+- "title" must be a concise Chinese title, not the original English sentence.
+
 Required JSON shape:
 {{
-  "title": "content title",
-  "summary": "3-5 sentence summary, under 200 Chinese characters if possible",
+  "title": "中文标题",
+  "summary": "中文摘要，2-4句，尽量控制在120字以内",
   "category": "one allowed category",
   "importance_stars": 4,
-  "importance_reason": "short reason for the score",
+  "importance_reason": "中文短理由",
+  "is_ai_relevant": true,
+  "relevance_reason": "中文说明它为什么属于或不属于AI时讯",
   "key_entities": ["entity1", "entity2"],
   "tags": ["tag1", "tag2"],
   "structured_notes": {{
-    "core_concept": "one sentence core idea",
-    "key_points": ["point1", "point2", "point3"],
-    "code_or_example": "example text or empty string",
+    "core_concept": "中文一句话核心观点",
+    "key_points": ["中文要点1", "中文要点2", "中文要点3"],
+    "code_or_example": "中文示例或空字符串",
     "reference_links": ["https://example.com"]
   }}
 }}
@@ -155,6 +167,9 @@ Content:
         except (TypeError, ValueError):
             importance_stars = 1
         importance_stars = max(1, min(importance_stars, 5))
+        is_ai_relevant = parsed.get('is_ai_relevant', True)
+        if not isinstance(is_ai_relevant, bool):
+            is_ai_relevant = str(is_ai_relevant).strip().lower() in {'true', '1', 'yes'}
 
         return {
             'title': str(parsed.get('title') or fallback_title),
@@ -162,6 +177,8 @@ Content:
             'category': category,
             'importance_stars': importance_stars,
             'importance_reason': str(parsed.get('importance_reason') or '').strip(),
+            'is_ai_relevant': is_ai_relevant,
+            'relevance_reason': str(parsed.get('relevance_reason') or '').strip(),
             'key_entities': [str(item) for item in parsed.get('key_entities', []) if str(item).strip()],
             'tags': [str(item) for item in parsed.get('tags', []) if str(item).strip()],
             'structured_notes': {

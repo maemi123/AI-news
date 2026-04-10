@@ -1,0 +1,17 @@
+services:
+  rsshub:
+    image: ghcr.io/diygod/rsshub:chromium-bundled
+    container_name: ai-news-rsshub
+    restart: unless-stopped
+    ports:
+      - "${PORT:-1200}:1200"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: "${NODE_ENV:-production}"
+      CACHE_TYPE: "${CACHE_TYPE:-memory}"
+      WEIBO_COOKIES: "${WEIBO_COOKIES:-}"
+      TWITTER_USERNAME: "${TWITTER_USERNAME:-}"
+      TWITTER_PASSWORD: "${TWITTER_PASSWORD:-}"
+      TWITTER_AUTH_TOKEN: "${TWITTER_AUTH_TOKEN:-}"
+      TWITTER_CT0: "${TWITTER_CT0:-}"
