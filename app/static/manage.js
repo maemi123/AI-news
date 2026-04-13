@@ -9,6 +9,7 @@ const pushTestBtn = document.getElementById("push-test-btn");
 const resetSourceBtn = document.getElementById("reset-source-btn");
 const actionStatus = document.getElementById("action-status");
 const schedulerSummary = document.getElementById("scheduler-summary");
+const schedulerStatusDetail = document.getElementById("scheduler-status-detail");
 const pushplusSummary = document.getElementById("pushplus-summary");
 const settingsForm = document.getElementById("settings-form");
 const pushPreview = document.getElementById("push-preview");
@@ -60,13 +61,35 @@ function renderCategorySummary(categories) {
 function renderSystemSettings(settings) {
   if (!settings) {
     schedulerSummary.textContent = "未读取到调度配置。";
+    schedulerStatusDetail.textContent = "未读取到系统任务状态。";
     pushplusSummary.textContent = "未读取到推送配置。";
     return;
   }
 
+  const scheduledTime = `${String(settings.daily_report_hour).padStart(2, "0")}:${String(settings.daily_report_minute).padStart(2, "0")}`;
+  const nextRun = settings.scheduler_next_run_at
+    ? new Date(settings.scheduler_next_run_at).toLocaleString()
+    : "暂无";
+  const lastRun = settings.scheduler_last_run_at
+    ? new Date(settings.scheduler_last_run_at).toLocaleString()
+    : "暂无";
+  const syncStatus = settings.scheduler_last_sync_error
+    ? `同步异常：${settings.scheduler_last_sync_error}`
+    : "最近同步正常";
+
   schedulerSummary.textContent = settings.scheduler_enabled
-    ? `已启用，每天 ${String(settings.daily_report_hour).padStart(2, "0")}:${String(settings.daily_report_minute).padStart(2, "0")} 执行，时区 ${settings.scheduler_timezone}，回看最近 ${settings.fetch_lookback_hours} 小时。`
-    : "当前已关闭自动采集任务。";
+    ? `已启用 Windows 自动任务，每天 ${scheduledTime} 执行，逻辑时区 ${settings.scheduler_timezone}，回看最近 ${settings.fetch_lookback_hours} 小时。`
+    : "当前已关闭 Windows 自动任务。";
+
+  schedulerStatusDetail.innerHTML = `
+    任务名：${settings.scheduler_task_name || "AI-News-Daily-Push"}<br>
+    已注册：${settings.scheduler_task_registered ? "是" : "否"}<br>
+    下次运行：${nextRun}<br>
+    上次运行：${lastRun}<br>
+    最近结果：${settings.scheduler_last_task_result ?? "暂无"}<br>
+    执行器：${settings.scheduler_executor_path || "未知"}<br>
+    状态：${syncStatus}
+  `;
 
   pushplusSummary.textContent = settings.pushplus_configured
     ? `已配置 PushPlus token（${settings.pushplus_token_masked || "已隐藏"}），可以直接测试推送。`
@@ -311,14 +334,14 @@ async function triggerPushTest() {
 async function saveSettings(event) {
   event.preventDefault();
   try {
-    setActionStatus("loading", "保存中", "正在保存调度和 PushPlus 配置，并重载定时任务...");
+    setActionStatus("loading", "保存中", "正在保存配置，并同步 Windows 计划任务...");
     await requestJson("/api/system-settings", {
       method: "PUT",
       body: JSON.stringify(getSettingsPayload()),
     });
     document.getElementById("pushplus-token").value = "";
     await loadDashboard();
-    setActionStatus("success", "配置已保存", "新的调度时间和 PushPlus 设置已经生效。");
+    setActionStatus("success", "配置已保存", "新的时间设置和 PushPlus 配置已同步到 Windows 计划任务。");
   } catch (error) {
     setActionStatus("error", "保存失败", error.message);
   }

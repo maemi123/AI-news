@@ -33,9 +33,9 @@ from app.services.content_pipeline import ContentPipelineError, ContentPipelineS
 from app.services.fetcher import FetcherService
 from app.services.notifier import NotifierError, PushPlusNotifier
 from app.services.system_settings import SystemSettingsService
+from app.services.windows_scheduler import WindowsTaskSchedulerError
 from app.services.video_processor import VideoProcessor, VideoProcessorError
 from app.utils.helpers import get_timezone
-from app.scheduler import reload_scheduler
 
 LOGGER = logging.getLogger(__name__)
 router = APIRouter()
@@ -91,9 +91,17 @@ async def update_system_settings(
     payload: SystemSettingsUpdate,
     session: AsyncSession = Depends(get_db_session),
 ) -> SystemSettingsResponse:
-    updated = await SystemSettingsService().update(session, payload)
-    await reload_scheduler()
-    return updated
+    try:
+        return await SystemSettingsService().update(session, payload)
+    except WindowsTaskSchedulerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=build_error_detail(
+                f'Windows task sync failed: {exc}',
+                stage='scheduler',
+                hint='请确认当前系统为 Windows，且当前账户有权限创建计划任务，然后重新保存设置。',
+            ),
+        ) from exc
 
 
 @router.post(

@@ -148,6 +148,14 @@ class SystemSettingsResponse(BaseModel):
     daily_report_minute: int
     scheduler_timezone: str
     fetch_lookback_hours: int
+    scheduler_backend: str
+    scheduler_task_registered: bool
+    scheduler_task_name: str
+    scheduler_next_run_at: datetime | None = None
+    scheduler_last_run_at: datetime | None = None
+    scheduler_last_task_result: int | None = None
+    scheduler_last_sync_error: str | None = None
+    scheduler_executor_path: str | None = None
     push_provider: str
     pushplus_configured: bool
     pushplus_token_masked: str | None = None

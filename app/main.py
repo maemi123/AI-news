@@ -9,7 +9,6 @@ from app.api import router
 from app.bootstrap import seed_default_monitor_sources
 from app.config import get_settings
 from app.database import AsyncSessionLocal, init_db
-from app.scheduler import start_scheduler, stop_scheduler
 from app.utils.logger import setup_logger
 
 settings = get_settings()
@@ -23,11 +22,7 @@ async def lifespan(_: FastAPI):
     await init_db()
     async with AsyncSessionLocal() as session:
         await seed_default_monitor_sources(session)
-    await start_scheduler()
-    try:
-        yield
-    finally:
-        await stop_scheduler()
+    yield
 
 
 app = FastAPI(

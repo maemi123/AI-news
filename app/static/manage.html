@@ -60,8 +60,12 @@
         </div>
         <div class="split-grid">
           <div class="helper-card">
-            <strong>当前自动任务</strong>
+            <strong>Windows 自动任务</strong>
             <span id="scheduler-summary">读取中...</span>
+          </div>
+          <div class="helper-card">
+            <strong>系统任务状态</strong>
+            <span id="scheduler-status-detail">读取中...</span>
           </div>
           <div class="helper-card">
             <strong>PushPlus 推送</strong>
@@ -73,7 +77,7 @@
           </div>
           <div class="helper-card">
             <strong>推送说明</strong>
-            <span>保存下面的设置后，系统会按前端配置的时间自动抓取并推送。注意：定时任务依赖当前 FastAPI 服务持续运行，关掉服务后不会继续执行。</span>
+            <span>保存下面的设置后，后端会同步 Windows 计划任务。即使 FastAPI 没有运行，系统也会在设定时间执行一次本地采集与 PushPlus 推送。</span>
           </div>
         </div>
         <form id="settings-form" class="stack-form settings-form">

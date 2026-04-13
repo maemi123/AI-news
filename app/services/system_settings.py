@@ -1,9 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from app.config import get_settings
 from app.models import SystemSetting
 from app.schemas import SystemSettingsResponse, SystemSettingsUpdate
 from app.services.fetcher import FetcherService
+from app.services.windows_scheduler import WindowsTaskSchedulerError, WindowsTaskSchedulerService
 
 
 def mask_token(token: str | None) -> str | None:
@@ -18,6 +19,7 @@ def mask_token(token: str | None) -> str | None:
 class SystemSettingsService:
     def __init__(self) -> None:
         self.config = get_settings()
+        self.windows_scheduler = WindowsTaskSchedulerService()
 
     async def get_or_create(self, session) -> SystemSetting:
         settings = await session.get(SystemSetting, 1)
@@ -42,12 +44,21 @@ class SystemSettingsService:
 
     async def read_response(self, session) -> SystemSettingsResponse:
         settings = await self.get_or_create(session)
+        scheduler_status = await self.windows_scheduler.get_status()
         return SystemSettingsResponse(
             scheduler_enabled=settings.scheduler_enabled,
             daily_report_hour=settings.daily_report_hour,
             daily_report_minute=settings.daily_report_minute,
             scheduler_timezone=settings.scheduler_timezone,
             fetch_lookback_hours=settings.fetch_lookback_hours,
+            scheduler_backend='windows_task',
+            scheduler_task_registered=scheduler_status.registered,
+            scheduler_task_name=scheduler_status.task_name,
+            scheduler_next_run_at=scheduler_status.next_run_at,
+            scheduler_last_run_at=scheduler_status.last_run_at,
+            scheduler_last_task_result=scheduler_status.last_task_result,
+            scheduler_last_sync_error=scheduler_status.last_sync_error,
+            scheduler_executor_path=scheduler_status.executor_path,
             push_provider=settings.push_provider,
             pushplus_configured=bool(settings.pushplus_token),
             pushplus_token_masked=mask_token(settings.pushplus_token),
@@ -56,6 +67,17 @@ class SystemSettingsService:
 
     async def update(self, session, payload: SystemSettingsUpdate) -> SystemSettingsResponse:
         settings = await self.get_or_create(session)
+
+        try:
+            await self.windows_scheduler.sync_task(
+                enabled=payload.scheduler_enabled,
+                hour=payload.daily_report_hour,
+                minute=payload.daily_report_minute,
+            )
+        except WindowsTaskSchedulerError:
+            await session.rollback()
+            raise
+
         settings.scheduler_enabled = payload.scheduler_enabled
         settings.daily_report_hour = payload.daily_report_hour
         settings.daily_report_minute = payload.daily_report_minute
