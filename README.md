@@ -242,25 +242,6 @@ RSSHUB_BASE_URL=http://127.0.0.1:1200
 - 必须提供有效的 `WEIBO_COOKIES`
 - 当直连接口不可用时，才会尝试 RSS 路径
 
-## GitHub 发布建议
-
-推送到 GitHub 前，建议检查下面这些点：
-
-- 不要提交 `.env`
-- 不要提交 `rsshub/.env`
-- 不要提交任何真实 cookie、token、SESSDATA、Webhook 地址
-- 保留 `.env.example` 作为模板，不要把真实值写进去
-- 确认 `.gitignore` 已包含 `.codex`、数据库文件、日志文件和本地环境文件
-
-如果你需要先清理暂存区里误加的敏感文件，可以用：
-
-```bash
-git rm --cached .env
-git rm --cached rsshub/.env
-```
-
-如果某些文件已经被历史提交过，单纯 `.gitignore` 不会自动删除历史记录，需要额外做历史清理。
-
 ## 已知限制
 
 - 微博对登录态要求高，cookie 经常失效
