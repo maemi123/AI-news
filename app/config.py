@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     tts_api_key: str = Field(default='', alias='TTS_API_KEY')
     tts_base_url: str = Field(default='https://api.openai.com/v1', alias='TTS_BASE_URL')
     tts_model: str = Field(default='gpt-4o-mini-tts', alias='TTS_MODEL')
+    podcast_channel: str = Field(default='built_in', alias='PODCAST_CHANNEL')
     tts_voice_male: str = Field(default='alloy', alias='TTS_VOICE_MALE')
     tts_voice_female: str = Field(default='nova', alias='TTS_VOICE_FEMALE')
     tts_format: str = Field(default='wav', alias='TTS_FORMAT')

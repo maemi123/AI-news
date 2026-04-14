@@ -126,6 +126,13 @@
               </select>
             </div>
             <div>
+              <label for="podcast-channel">播客通道</label>
+              <select id="podcast-channel" name="podcast_channel">
+                <option value="built_in">内置 TTS</option>
+                <option value="edge_tts">Edge TTS</option>
+              </select>
+            </div>
+            <div>
               <label for="tts-voice-male">男声 Voice</label>
               <input id="tts-voice-male" name="tts_voice_male" type="text" value="alloy">
             </div>
@@ -134,6 +141,9 @@
               <input id="tts-voice-female" name="tts_voice_female" type="text" value="nova">
             </div>
           </div>
+          <p class="lead small">
+            内置 TTS 适合继续走你当前的 OpenAI 兼容语音接口；Edge TTS 更轻量，中文推荐男声 `zh-CN-YunyangNeural`、女声 `zh-CN-XiaoxiaoNeural`。
+          </p>
           <div class="form-actions">
             <button id="save-settings-btn" class="btn" type="submit">保存推送设置</button>
           </div>

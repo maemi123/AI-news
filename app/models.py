@@ -153,6 +153,7 @@ class PodcastSetting(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     podcast_audio_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     podcast_include_audio_link: Mapped[bool] = mapped_column(Boolean, default=True)
+    podcast_channel: Mapped[str] = mapped_column(String(32), default='built_in')
     tts_voice_male: Mapped[str] = mapped_column(String(100), default='alloy')
     tts_voice_female: Mapped[str] = mapped_column(String(100), default='nova')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -2,31 +2,26 @@
 
 一个面向个人或小团队的 AI 资讯监控项目，用来持续抓取 B 站、X / Twitter、微博等平台账号动态，过滤非 AI 内容，生成中文摘要，并通过 PushPlus 推送日报。
 
-这套系统现在已经调整为 Windows 计划任务主调度：
-
-- 前端管理页负责配置每日推送时间
-- 后端保存设置时会自动同步 Windows 计划任务
-- 即使 FastAPI 服务没有运行，到点后也能自动执行采集与 PushPlus 推送
-- 如果 9:00 的正式推送失败，系统会在 9:30 和 10:00 再自动补偿重试，最多 3 次
-- 日常资源占用更低，不需要长期挂着 Python Web 服务只是为了定时推送
+当前版本已经把“定时采集与推送”调整为 `Windows 计划任务主调度`，同时支持“双人互动版 AI 随身听播客”。
 
 ## 功能概览
 
 - 监控多个平台账号并抓取最新内容
-- 将英文内容整理为中文标题和中文摘要
-- 过滤明显与 AI 无关的噪音内容
-- 使用大模型生成摘要、分类、重要性评分
-- 将处理结果落库，并记录每个监控源最近一次抓取状态
-- 支持管理页手动“立即采集”和“测试推送”
-- 支持 PushPlus 日报推送
-- 支持双人互动版 AI 随身听播客生成与外链推送
+- 自动过滤明显与 AI 无关的噪声内容
+- 生成中文标题、中文摘要、分类和重要性评分
+- 支持 PushPlus 文本日报推送
+- 支持双人互动播客音频生成并附带外链推送
+- 支持两种播客通道切换：
+  - `内置 TTS`：走当前 OpenAI 兼容语音接口
+  - `Edge TTS`：走 Microsoft Edge TTS，本地合成、资源更轻
 - 支持自建 RSSHub，为 X / Twitter 以及部分 B 站场景提供抓取能力
+- 支持 Windows 计划任务自动补偿重试：9:00 失败后，9:30 和 10:00 再试，最多 3 次
 
 ## 当前平台状态
 
-- X / Twitter：依赖自建 RSSHub 和可用的出海网络，本机无法访问 `x.com` 时会失败
-- B 站：可用，但存在明显风控波动，成功率受账号、时间窗和请求频率影响
-- 微博：当前已支持项目内直连微博接口抓取，强依赖有效登录态 cookie 和数字 uid
+- X / Twitter：推荐通过自建 RSSHub 抓取；本机需要能访问 `x.com`
+- B 站：可用，但存在风控波动，部分账号会间歇失败
+- 微博：支持项目内直连抓取，但强依赖有效 cookie 和正确 uid
 
 ## 技术栈
 
@@ -36,18 +31,17 @@
 - httpx
 - yt-dlp
 - feedparser
-- DeepSeek 兼容接口
 - PushPlus
 - RSSHub
 - Windows Task Scheduler
-- S3 兼容对象存储
+- 阿里云 OSS / S3 兼容对象存储
 
 ## 目录结构
 
 ```text
 app/                 FastAPI 应用与核心业务逻辑
 rsshub/              自建 RSSHub 的 Docker 部署文件
-.env.example         项目主环境变量模板
+.env.example         环境变量模板
 requirements.txt     Python 依赖
 README.md            项目说明
 ```
@@ -86,7 +80,6 @@ cp .env.example .env
 - `BILIBILI_BILI_JCT`
 - `BILIBILI_BUVID3`
 - `WEIBO_COOKIES`
-- `WHISPER_API_KEY`
 - `RSSHUB_BASE_URL`
 
 5. 启动管理服务
@@ -97,8 +90,8 @@ uvicorn app.main:app --reload
 
 启动后可访问：
 
-- 管理页：`http://127.0.0.1:8000/manage`
-- 接口文档：`http://127.0.0.1:8000/docs`
+- 管理页：[http://127.0.0.1:8000/manage](http://127.0.0.1:8000/manage)
+- 接口文档：[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ## Windows 自动任务
 
@@ -107,50 +100,110 @@ uvicorn app.main:app --reload
 ### 工作方式
 
 - 管理页中的“自动任务 / 小时 / 分钟 / 时区”仍然保留
-- 保存后，后端会同步一个固定名称的 Windows 计划任务：`AI-News-Daily-Push`
-- 同时还会自动同步两个补偿任务：`AI-News-Daily-Push-Retry-1`、`AI-News-Daily-Push-Retry-2`
+- 保存后，后端会同步 Windows 计划任务：
+  - `AI-News-Daily-Push`
+  - `AI-News-Daily-Push-Retry-1`
+  - `AI-News-Daily-Push-Retry-2`
 - 计划任务会直接执行：
 
 ```bash
 python -m app.run_scheduled_job
 ```
 
-- 独立脚本会自动初始化数据库、读取当前设置、执行采集并推送，然后退出
-- 每日第一次成功推送后，后续补偿任务会自动跳过，不会重复推送
-- 如果前一次执行失败，系统会按半小时间隔继续补偿，最多 3 次
-
-### 优点
-
-- FastAPI 不需要一直运行
-- 系统资源占用更低
-- 定时推送更接近真实部署环境
-
-### 当前实现细节
-
-- 优先使用项目内 `.venv\Scripts\python.exe`
-- 如果没有 `.venv`，则回退到 `py -3`
-- Windows 任务工作目录固定为项目根目录，避免 `.env`、SQLite 相对路径失效
+- 即使 FastAPI 没有运行，到点后也会自动采集和推送
+- 当日首次成功推送后，后续补偿任务会自动跳过
+- 如果 9:00 推送失败，会在 9:30、10:00 自动重试，最多 3 次
 
 ### 验证方式
 
-保存管理页设置后，可以在 PowerShell 中查看任务：
+PowerShell 查看任务：
 
 ```powershell
 schtasks /Query /TN AI-News-Daily-Push /FO LIST /V
 ```
 
-也可以直接执行一次独立任务：
+手动执行一次独立任务：
 
 ```bash
 python -m app.run_scheduled_job
 ```
 
+## 双人 AI 随身听
+
+项目支持基于当天 AI 时讯生成双人互动版中文播客：
+
+- 男声 `host_a`
+- 女声 `host_b`
+- 风格偏“搭档聊天”，不是纯播报腔
+- 音频生成失败不会阻断文本日报推送
+
+### 播客通道
+
+管理页支持切换：
+
+- `内置 TTS`
+- `Edge TTS`
+
+#### 1. 内置 TTS
+
+适合已经接好 OpenAI 兼容语音接口的场景。
+
+相关变量：
+
+- `PODCAST_CHANNEL=built_in`
+- `TTS_API_KEY`
+- `TTS_BASE_URL`
+- `TTS_MODEL`
+- `TTS_VOICE_MALE`
+- `TTS_VOICE_FEMALE`
+- `TTS_FORMAT`
+
+#### 2. Edge TTS
+
+更轻量，本地直接合成，通常中文自然度也更稳一些。
+
+相关变量：
+
+- `PODCAST_CHANNEL=edge_tts`
+- `TTS_VOICE_MALE`
+- `TTS_VOICE_FEMALE`
+
+推荐中文音色：
+
+- 男声：`zh-CN-YunyangNeural`
+- 女声：`zh-CN-XiaoxiaoNeural`
+
+说明：
+
+- Edge TTS 生成分段音频后会自动拼接
+- 最终上传的是 `mp3`
+- 不依赖本地 FastAPI 托管音频
+
+## 对象存储
+
+播客音频会上传到对象存储并在 PushPlus 中附带链接。
+
+常用变量：
+
+- `AUDIO_STORAGE_PROVIDER`
+- `AUDIO_STORAGE_ENDPOINT`
+- `AUDIO_STORAGE_BUCKET`
+- `AUDIO_STORAGE_ACCESS_KEY`
+- `AUDIO_STORAGE_SECRET_KEY`
+- `AUDIO_STORAGE_REGION`
+- `AUDIO_STORAGE_PUBLIC_BASE_URL`
+
+阿里云 OSS 可直接使用：
+
+- `AUDIO_STORAGE_PROVIDER=s3` 或项目内阿里云兼容配置
+- `AUDIO_STORAGE_ENDPOINT=oss-cn-beijing.aliyuncs.com`
+
 ## 环境变量说明
 
 ### 基础运行
 
-- `DEBUG`：是否开启调试日志，默认建议 `false`
-- `DATABASE_URL`：数据库连接串，默认使用本地 SQLite
+- `DEBUG`
+- `DATABASE_URL`
 
 ### 大模型
 
@@ -168,31 +221,17 @@ python -m app.run_scheduled_job
 
 - `PUSHPLUS_TOKEN`
 
-### 双人随身听
+### 播客
 
 - `PODCAST_AUDIO_ENABLED`
 - `PODCAST_INCLUDE_AUDIO_LINK`
+- `PODCAST_CHANNEL`
 - `TTS_API_KEY`
 - `TTS_BASE_URL`
 - `TTS_MODEL`
 - `TTS_VOICE_MALE`
 - `TTS_VOICE_FEMALE`
 - `TTS_FORMAT`
-
-说明：
-
-- 当前双人播客默认使用“男声 + 女声”分段 TTS 合成
-- 当前实现内部先生成 `wav`，再自动压成 `mp3` 供外链播放
-
-### 音频对象存储
-
-- `AUDIO_STORAGE_PROVIDER`
-- `AUDIO_STORAGE_ENDPOINT`
-- `AUDIO_STORAGE_BUCKET`
-- `AUDIO_STORAGE_ACCESS_KEY`
-- `AUDIO_STORAGE_SECRET_KEY`
-- `AUDIO_STORAGE_REGION`
-- `AUDIO_STORAGE_PUBLIC_BASE_URL`
 
 ### B 站
 
@@ -212,22 +251,17 @@ python -m app.run_scheduled_job
 - `FETCH_LOOKBACK_HOURS`
 - `SCHEDULER_TIMEZONE`
 
-说明：
-
-- 这些字段现在表示“Windows 自动任务的计划时间”和内容计算时区
-- 真正的定时触发由 Windows 系统计划任务负责
-
-### 自建 RSSHub
+### RSSHub
 
 - `RSSHUB_BASE_URL`
 
 ## 自建 RSSHub
 
-项目已经支持优先使用自建 RSSHub。
+项目支持优先使用自建 RSSHub。
 
-1. 进入 [rsshub/README.md](/D:/pythonProject/AI_news/rsshub/README.md)
-2. 按说明复制 `rsshub/.env.example` 为 `rsshub/.env`
-3. 填写 X / Twitter、微博相关凭据
+1. 查看 [rsshub/README.md](/D:/pythonProject/AI_news/rsshub/README.md)
+2. 复制 `rsshub/.env.example` 为 `rsshub/.env`
+3. 填写 Twitter、微博等相关凭据
 4. 启动 RSSHub
 5. 在项目根目录 `.env` 中设置：
 
@@ -235,57 +269,47 @@ python -m app.run_scheduled_job
 RSSHUB_BASE_URL=http://127.0.0.1:1200
 ```
 
-应用在抓取 X / Twitter 时会自动优先走自建 RSSHub，不需要逐条改数据库里的 `rss_url`。
-
-微博当前优先走项目内直连接口抓取，只有在未配置项目主 `.env` 中的 `WEIBO_COOKIES` 时才会退回 RSS 方案。
-
-## 运行逻辑说明
+## 抓取逻辑说明
 
 ### 采集流程
 
-1. 从 `monitor_sources` 读取激活中的监控源
+1. 从 `monitor_sources` 读取启用中的监控源
 2. 按平台调用不同抓取策略
-3. 做去重、过滤和 AI 相关性判断
-4. 对有效内容生成中文标题、中文摘要和评分
-5. 将结果写入 `processed_contents`
-6. 更新每个监控源的最近抓取状态
-7. 可选推送到 PushPlus
+3. 去重、过滤、判断 AI 相关性
+4. 生成中文摘要和评分
+5. 写入 `processed_contents`
+6. 触发日报与播客生成
 
 ### B 站抓取策略
 
-当前实现按以下顺序回退：
+按以下顺序回退：
 
 1. 官方空间接口
 2. `yt-dlp`
-3. 自建 RSSHub B 站路由
-
-即便如此，B 站依然可能因为 `412`、`-352` 等风控错误出现波动。
+3. RSSHub B 站路由
 
 ### X / Twitter 抓取策略
 
-- 优先使用自建 RSSHub `/twitter/user/:id`
-- 配合 Twitter 登录态和可用的出海网络后可稳定工作
-- 如果本机无法访问 `https://x.com`，则这一路会直接失败
+- 优先使用 RSSHub `/twitter/user/:id`
+- 本机需要具备可访问 `x.com` 的网络环境
 
 ### 微博抓取策略
 
 - 优先使用项目内直连微博接口
-- 必须是数字 uid
-- 必须提供有效的 `WEIBO_COOKIES`
-- 当直连接口不可用时，才会尝试 RSS 路径
+- 必须提供有效 `WEIBO_COOKIES`
+- `platform_id` 必须为数字 uid
 
 ## 已知限制
 
-- 微博对登录态要求高，cookie 经常失效
-- B 站风控较强，部分账号会间歇性失败
-- 即使来源账号本身是 AI 圈人物，也不能保证每条动态都与 AI 相关
-- 上游平台规则变化会直接影响抓取稳定性
-- X / Twitter 对本机网络环境要求高，是否能访问 `x.com` 会直接影响结果
-- Windows 自动推送依赖本机处于开机状态，关机时不会执行
+- 微博 cookie 容易失效
+- B 站风控较强，稳定性会波动
+- X / Twitter 强依赖网络环境
+- 即使来源账号本身属于 AI 圈，也不能保证每条动态都与 AI 强相关
+- Windows 定时任务依赖机器处于开机状态
 
 ## 适合的使用方式
 
 - 个人 AI 行业追踪
-- 小团队内部日报
-- 资讯聚合与后续二次加工
+- 小团队内部 AI 日报
+- 资讯聚合后二次加工
 - 作为更大自动化系统的数据采集前端

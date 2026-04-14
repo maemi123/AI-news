@@ -103,8 +103,9 @@ function renderSystemSettings(settings) {
   const podcastAudio = settings.podcast_last_audio_url
     ? `，音频链接已生成`
     : "";
+  const podcastChannelLabel = settings.podcast_channel === "edge_tts" ? "Edge TTS" : "内置 TTS";
   podcastSummary.textContent = settings.podcast_audio_enabled
-    ? `双人 AI 随身听已启用，男声 ${settings.tts_voice_male}，女声 ${settings.tts_voice_female}，最近状态 ${settings.podcast_last_status || "暂无"}${podcastDuration}${podcastAudio}。`
+    ? `双人 AI 随身听已启用，当前通道 ${podcastChannelLabel}，男声 ${settings.tts_voice_male}，女声 ${settings.tts_voice_female}，最近状态 ${settings.podcast_last_status || "暂无"}${podcastDuration}${podcastAudio}。`
     : "双人 AI 随身听当前未启用。";
 
   document.getElementById("scheduler-enabled").value = String(settings.scheduler_enabled);
@@ -114,6 +115,7 @@ function renderSystemSettings(settings) {
   document.getElementById("scheduler-timezone").value = settings.scheduler_timezone;
   document.getElementById("podcast-audio-enabled").value = String(settings.podcast_audio_enabled);
   document.getElementById("podcast-include-audio-link").value = String(settings.podcast_include_audio_link);
+  document.getElementById("podcast-channel").value = settings.podcast_channel || "built_in";
   document.getElementById("tts-voice-male").value = settings.tts_voice_male || "alloy";
   document.getElementById("tts-voice-female").value = settings.tts_voice_female || "nova";
   document.getElementById("pushplus-token").placeholder = settings.pushplus_token_masked
@@ -242,6 +244,7 @@ function getSettingsPayload() {
     pushplus_token: document.getElementById("pushplus-token").value.trim() || null,
     podcast_audio_enabled: document.getElementById("podcast-audio-enabled").value === "true",
     podcast_include_audio_link: document.getElementById("podcast-include-audio-link").value === "true",
+    podcast_channel: document.getElementById("podcast-channel").value || "built_in",
     tts_voice_male: document.getElementById("tts-voice-male").value.trim() || "alloy",
     tts_voice_female: document.getElementById("tts-voice-female").value.trim() || "nova",
   };

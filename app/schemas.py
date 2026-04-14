@@ -162,6 +162,7 @@ class SystemSettingsResponse(BaseModel):
     seed_default_monitor_sources: bool
     podcast_audio_enabled: bool = False
     podcast_include_audio_link: bool = True
+    podcast_channel: str = 'built_in'
     tts_voice_male: str = 'alloy'
     tts_voice_female: str = 'nova'
     podcast_last_status: str | None = None
@@ -180,5 +181,6 @@ class SystemSettingsUpdate(BaseModel):
     pushplus_token: str | None = None
     podcast_audio_enabled: bool = False
     podcast_include_audio_link: bool = True
+    podcast_channel: str = 'built_in'
     tts_voice_male: str = 'alloy'
     tts_voice_female: str = 'nova'

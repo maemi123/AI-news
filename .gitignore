@@ -49,6 +49,7 @@ rsshub/.env
 # 临时文件
 *.tmp
 *.temp
+.tmp_edge_tts/
 
 # 视频/音频文件
 *.mp4

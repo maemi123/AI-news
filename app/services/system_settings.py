@@ -69,6 +69,7 @@ class SystemSettingsService:
             seed_default_monitor_sources=settings.seed_default_monitor_sources,
             podcast_audio_enabled=podcast_settings.podcast_audio_enabled,
             podcast_include_audio_link=podcast_settings.podcast_include_audio_link,
+            podcast_channel=podcast_settings.podcast_channel,
             tts_voice_male=podcast_settings.tts_voice_male,
             tts_voice_female=podcast_settings.tts_voice_female,
             podcast_last_status=latest_episode.status if latest_episode else None,
@@ -99,6 +100,7 @@ class SystemSettingsService:
         podcast_settings = await self.podcast_service.get_or_create_settings(session)
         podcast_settings.podcast_audio_enabled = payload.podcast_audio_enabled
         podcast_settings.podcast_include_audio_link = payload.podcast_include_audio_link
+        podcast_settings.podcast_channel = (payload.podcast_channel or self.config.podcast_channel).strip() or 'built_in'
         podcast_settings.tts_voice_male = payload.tts_voice_male.strip() or self.config.tts_voice_male
         podcast_settings.tts_voice_female = payload.tts_voice_female.strip() or self.config.tts_voice_female
 

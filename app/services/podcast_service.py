@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.models import PodcastEpisode, PodcastSetting, ProcessedContent
 from app.services.audio_storage import AudioStorageError, AudioStorageService
+from app.services.edge_tts_service import EdgeDialogueTTSService, EdgeTTSServiceError
 from app.services.podcast_script_service import PodcastScriptError, PodcastScriptService
 from app.services.tts_service import DialogueTTSService, TTSServiceError
 
@@ -27,6 +28,7 @@ class PodcastService:
     def __init__(self) -> None:
         self.script_service = PodcastScriptService()
         self.tts_service = DialogueTTSService()
+        self.edge_tts_service = EdgeDialogueTTSService()
         self.audio_storage = AudioStorageService()
 
     async def get_or_create_settings(self, session) -> PodcastSetting:
@@ -39,6 +41,7 @@ class PodcastService:
             id=1,
             podcast_audio_enabled=defaults.podcast_audio_enabled,
             podcast_include_audio_link=defaults.podcast_include_audio_link,
+            podcast_channel=defaults.podcast_channel,
             tts_voice_male=defaults.tts_voice_male,
             tts_voice_female=defaults.tts_voice_female,
         )
@@ -89,17 +92,15 @@ class PodcastService:
             await session.commit()
             return PodcastBuildResult(status='no_content')
 
-        self.tts_service.settings.tts_voice_male = settings.tts_voice_male
-        self.tts_service.settings.tts_voice_female = settings.tts_voice_female
-
         episode.status = 'generating'
         episode.error_message = None
         await session.commit()
 
         try:
             script = await self.script_service.generate_dialogue_script(contents=contents, report_date=report_date)
-            audio_bytes, duration_seconds, content_type, extension = await self.tts_service.synthesize_dialogue(
-                script.dialogue_lines
+            audio_bytes, duration_seconds, content_type, extension = await self._synthesize_dialogue(
+                dialogue_lines=script.dialogue_lines,
+                settings=settings,
             )
             storage_key = f'podcasts/{report_date.isoformat()}/ai-news-dialogue.{extension}'
             uploaded = await self.audio_storage.upload_audio(
@@ -107,7 +108,7 @@ class PodcastService:
                 key=storage_key,
                 content_type=content_type,
             )
-        except (PodcastScriptError, TTSServiceError, AudioStorageError) as exc:
+        except (PodcastScriptError, TTSServiceError, EdgeTTSServiceError, AudioStorageError) as exc:
             episode.status = 'failed'
             episode.error_message = str(exc)
             await session.commit()
@@ -130,3 +131,21 @@ class PodcastService:
             duration_seconds=duration_seconds,
             title=script.title,
         )
+
+    async def _synthesize_dialogue(
+        self,
+        *,
+        dialogue_lines: list[dict[str, str]],
+        settings: PodcastSetting,
+    ) -> tuple[bytes, int, str, str]:
+        channel = (settings.podcast_channel or 'built_in').strip().lower()
+        if channel == 'edge_tts':
+            return await self.edge_tts_service.synthesize_dialogue(
+                dialogue_lines,
+                male_voice=settings.tts_voice_male,
+                female_voice=settings.tts_voice_female,
+            )
+
+        self.tts_service.settings.tts_voice_male = settings.tts_voice_male
+        self.tts_service.settings.tts_voice_female = settings.tts_voice_female
+        return await self.tts_service.synthesize_dialogue(dialogue_lines)
