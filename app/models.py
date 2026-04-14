@@ -129,3 +129,19 @@ class ProcessedContent(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     source: Mapped[MonitorSource | None] = relationship(back_populates='processed_contents')
+
+
+class ScheduledPushState(Base):
+    __tablename__ = 'scheduled_push_states'
+    __table_args__ = (
+        UniqueConstraint('report_date', name='uq_scheduled_push_state_report_date'),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    report_date: Mapped[str] = mapped_column(String(16), index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_attempt_slot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
