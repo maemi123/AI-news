@@ -72,6 +72,10 @@
             <span id="pushplus-summary">读取中...</span>
           </div>
           <div class="helper-card">
+            <strong>AI 随身听</strong>
+            <span id="podcast-summary">读取中...</span>
+          </div>
+          <div class="helper-card">
             <strong>AI 内容筛选</strong>
             <span>抓取后会先做一层 AI 关键词过滤，再进入摘要和评分流程，尽量把明显不相关内容挡掉。</span>
           </div>
@@ -106,6 +110,30 @@
           <input id="scheduler-timezone" name="scheduler_timezone" type="text" value="Asia/Shanghai">
           <label for="pushplus-token">PushPlus Token</label>
           <input id="pushplus-token" name="pushplus_token" type="text" placeholder="输入新的 PushPlus token；留空表示保留现有 token">
+          <div class="settings-grid">
+            <div>
+              <label for="podcast-audio-enabled">双人随身听</label>
+              <select id="podcast-audio-enabled" name="podcast_audio_enabled">
+                <option value="true">启用</option>
+                <option value="false">关闭</option>
+              </select>
+            </div>
+            <div>
+              <label for="podcast-include-audio-link">推送音频链接</label>
+              <select id="podcast-include-audio-link" name="podcast_include_audio_link">
+                <option value="true">启用</option>
+                <option value="false">关闭</option>
+              </select>
+            </div>
+            <div>
+              <label for="tts-voice-male">男声 Voice</label>
+              <input id="tts-voice-male" name="tts_voice_male" type="text" value="alloy">
+            </div>
+            <div>
+              <label for="tts-voice-female">女声 Voice</label>
+              <input id="tts-voice-female" name="tts_voice_female" type="text" value="nova">
+            </div>
+          </div>
           <div class="form-actions">
             <button id="save-settings-btn" class="btn" type="submit">保存推送设置</button>
           </div>

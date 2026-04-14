@@ -31,7 +31,8 @@ from app.services.ai_processor import AIProcessorError
 from app.services.bilibili_service import BilibiliAPIError
 from app.services.content_pipeline import ContentPipelineError, ContentPipelineService
 from app.services.fetcher import FetcherService
-from app.services.notifier import NotifierError, PushPlusNotifier
+from app.services.notifier import NotifierError, PodcastAttachment, PushPlusNotifier
+from app.services.podcast_service import PodcastService
 from app.services.system_settings import SystemSettingsService
 from app.services.windows_scheduler import WindowsTaskSchedulerError
 from app.services.video_processor import VideoProcessor, VideoProcessorError
@@ -377,6 +378,9 @@ async def fetch_now(
 @router.post('/api/push/test', response_model=PushTestResponse, summary='Send test daily report')
 async def push_test(session: AsyncSession = Depends(get_db_session)) -> PushTestResponse:
     runtime = await SystemSettingsService().get_or_create(session)
+    podcast_service = PodcastService()
+    podcast_settings = await podcast_service.get_or_create_settings(session)
+    latest_episode = await podcast_service.get_latest_episode(session)
     timezone_name = runtime.scheduler_timezone
     start_of_day = datetime.now(get_timezone(timezone_name)).replace(hour=0, minute=0, second=0, microsecond=0)
     cutoff = start_of_day.astimezone(timezone.utc)
@@ -391,8 +395,24 @@ async def push_test(session: AsyncSession = Depends(get_db_session)) -> PushTest
 
     try:
         notifier = PushPlusNotifier(runtime.pushplus_token or '')
-        preview_chunks = notifier.format_daily_report(contents, start_of_day.date())
-        chunk_count, _ = await notifier.send_daily_report(contents, report_date=start_of_day.date())
+        podcast = None
+        if (
+            podcast_settings.podcast_include_audio_link
+            and latest_episode is not None
+            and latest_episode.report_date == start_of_day.date().isoformat()
+            and latest_episode.audio_url
+        ):
+            podcast = PodcastAttachment(
+                title=latest_episode.title or '双人 AI 随身听',
+                audio_url=latest_episode.audio_url,
+                duration_seconds=latest_episode.duration_seconds,
+            )
+        if podcast is not None:
+            preview_chunks = notifier.format_daily_report(contents, start_of_day.date(), podcast=podcast)
+            chunk_count, _ = await notifier.send_daily_report(contents, report_date=start_of_day.date(), podcast=podcast)
+        else:
+            preview_chunks = notifier.format_daily_report(contents, start_of_day.date())
+            chunk_count, _ = await notifier.send_daily_report(contents, report_date=start_of_day.date())
     except NotifierError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

@@ -30,10 +30,25 @@ class Settings(BaseSettings):
     whisper_api_key: str = Field(default='', alias='WHISPER_API_KEY')
     whisper_base_url: str = Field(default='https://api.openai.com/v1', alias='WHISPER_BASE_URL')
     whisper_model: str = Field(default='whisper-large-v3', alias='WHISPER_MODEL')
+    tts_api_key: str = Field(default='', alias='TTS_API_KEY')
+    tts_base_url: str = Field(default='https://api.openai.com/v1', alias='TTS_BASE_URL')
+    tts_model: str = Field(default='gpt-4o-mini-tts', alias='TTS_MODEL')
+    tts_voice_male: str = Field(default='alloy', alias='TTS_VOICE_MALE')
+    tts_voice_female: str = Field(default='nova', alias='TTS_VOICE_FEMALE')
+    tts_format: str = Field(default='wav', alias='TTS_FORMAT')
+    podcast_audio_enabled: bool = Field(default=False, alias='PODCAST_AUDIO_ENABLED')
+    podcast_include_audio_link: bool = Field(default=True, alias='PODCAST_INCLUDE_AUDIO_LINK')
 
     pushplus_token: str = Field(default='', alias='PUSHPLUS_TOKEN')
     wecom_webhook_url: str = Field(default='', alias='WECOM_WEBHOOK_URL')
     rsshub_base_url: str = Field(default='', alias='RSSHUB_BASE_URL')
+    audio_storage_provider: str = Field(default='s3', alias='AUDIO_STORAGE_PROVIDER')
+    audio_storage_endpoint: str = Field(default='', alias='AUDIO_STORAGE_ENDPOINT')
+    audio_storage_bucket: str = Field(default='', alias='AUDIO_STORAGE_BUCKET')
+    audio_storage_access_key: str = Field(default='', alias='AUDIO_STORAGE_ACCESS_KEY')
+    audio_storage_secret_key: str = Field(default='', alias='AUDIO_STORAGE_SECRET_KEY')
+    audio_storage_region: str = Field(default='auto', alias='AUDIO_STORAGE_REGION')
+    audio_storage_public_base_url: str = Field(default='', alias='AUDIO_STORAGE_PUBLIC_BASE_URL')
     database_url: str = Field(default='sqlite+aiosqlite:///./ai_news.db', alias='DATABASE_URL')
     target_up_ids_raw: str = Field(default='', alias='TARGET_UP_IDS')
 
@@ -68,6 +83,10 @@ class Settings(BaseSettings):
     @property
     def whisper_transcriptions_url(self) -> str:
         return self.whisper_base_url.rstrip('/') + '/audio/transcriptions'
+
+    @property
+    def tts_speech_url(self) -> str:
+        return self.tts_base_url.rstrip('/') + '/audio/speech'
 
     @property
     def effective_bilibili_sessdata(self) -> str:
@@ -109,6 +128,19 @@ class Settings(BaseSettings):
         return len(self.pushplus_token.strip()) >= 16
 
     @property
+    def has_valid_tts_config(self) -> bool:
+        return bool(self.tts_api_key.strip() and self.tts_model.strip())
+
+    @property
+    def has_valid_audio_storage(self) -> bool:
+        return bool(
+            self.audio_storage_bucket.strip()
+            and self.audio_storage_access_key.strip()
+            and self.audio_storage_secret_key.strip()
+            and self.audio_storage_public_base_url.strip()
+        )
+
+    @property
     def effective_rsshub_base_url(self) -> str:
         value = self.rsshub_base_url.strip().rstrip('/')
         if not value:
@@ -122,11 +154,14 @@ class Settings(BaseSettings):
         for key in (
             'DEEPSEEK_API_KEY',
             'WHISPER_API_KEY',
+            'TTS_API_KEY',
             'BILIBILI_SESSDATA',
             'BILIBILI_BILI_JCT',
             'BILIBILI_BUVID3',
             'WEIBO_COOKIES',
             'WECOM_WEBHOOK_URL',
+            'AUDIO_STORAGE_ACCESS_KEY',
+            'AUDIO_STORAGE_SECRET_KEY',
         ):
             value = data.get(key, '')
             if value:

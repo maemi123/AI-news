@@ -11,6 +11,7 @@ const actionStatus = document.getElementById("action-status");
 const schedulerSummary = document.getElementById("scheduler-summary");
 const schedulerStatusDetail = document.getElementById("scheduler-status-detail");
 const pushplusSummary = document.getElementById("pushplus-summary");
+const podcastSummary = document.getElementById("podcast-summary");
 const settingsForm = document.getElementById("settings-form");
 const pushPreview = document.getElementById("push-preview");
 
@@ -63,6 +64,7 @@ function renderSystemSettings(settings) {
     schedulerSummary.textContent = "未读取到调度配置。";
     schedulerStatusDetail.textContent = "未读取到系统任务状态。";
     pushplusSummary.textContent = "未读取到推送配置。";
+    podcastSummary.textContent = "未读取到随身听配置。";
     return;
   }
 
@@ -95,11 +97,25 @@ function renderSystemSettings(settings) {
     ? `已配置 PushPlus token（${settings.pushplus_token_masked || "已隐藏"}），可以直接测试推送。`
     : "尚未配置 PushPlus token，当前只能先完成采集和入库。";
 
+  const podcastDuration = settings.podcast_last_duration_seconds
+    ? `，最近一期约 ${Math.max(1, Math.round(settings.podcast_last_duration_seconds / 60))} 分钟`
+    : "";
+  const podcastAudio = settings.podcast_last_audio_url
+    ? `，音频链接已生成`
+    : "";
+  podcastSummary.textContent = settings.podcast_audio_enabled
+    ? `双人 AI 随身听已启用，男声 ${settings.tts_voice_male}，女声 ${settings.tts_voice_female}，最近状态 ${settings.podcast_last_status || "暂无"}${podcastDuration}${podcastAudio}。`
+    : "双人 AI 随身听当前未启用。";
+
   document.getElementById("scheduler-enabled").value = String(settings.scheduler_enabled);
   document.getElementById("daily-report-hour").value = settings.daily_report_hour;
   document.getElementById("daily-report-minute").value = settings.daily_report_minute;
   document.getElementById("fetch-lookback-hours").value = settings.fetch_lookback_hours;
   document.getElementById("scheduler-timezone").value = settings.scheduler_timezone;
+  document.getElementById("podcast-audio-enabled").value = String(settings.podcast_audio_enabled);
+  document.getElementById("podcast-include-audio-link").value = String(settings.podcast_include_audio_link);
+  document.getElementById("tts-voice-male").value = settings.tts_voice_male || "alloy";
+  document.getElementById("tts-voice-female").value = settings.tts_voice_female || "nova";
   document.getElementById("pushplus-token").placeholder = settings.pushplus_token_masked
     ? `当前 token: ${settings.pushplus_token_masked}`
     : "输入新的 PushPlus token；留空表示保留现有 token";
@@ -224,6 +240,10 @@ function getSettingsPayload() {
     scheduler_timezone: document.getElementById("scheduler-timezone").value.trim() || "Asia/Shanghai",
     push_provider: "pushplus",
     pushplus_token: document.getElementById("pushplus-token").value.trim() || null,
+    podcast_audio_enabled: document.getElementById("podcast-audio-enabled").value === "true",
+    podcast_include_audio_link: document.getElementById("podcast-include-audio-link").value === "true",
+    tts_voice_male: document.getElementById("tts-voice-male").value.trim() || "alloy",
+    tts_voice_female: document.getElementById("tts-voice-female").value.trim() || "nova",
   };
 }
 

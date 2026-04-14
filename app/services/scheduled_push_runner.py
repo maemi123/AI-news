@@ -9,7 +9,8 @@ from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.models import ProcessedContent, ScheduledPushState
 from app.services.content_pipeline import ContentPipelineService
-from app.services.notifier import NotifierError, PushPlusNotifier
+from app.services.notifier import NotifierError, PodcastAttachment, PushPlusNotifier
+from app.services.podcast_service import PodcastBuildResult, PodcastService
 from app.services.system_settings import SystemSettingsService
 from app.utils.helpers import get_timezone, utcnow
 
@@ -28,6 +29,7 @@ class ScheduledPushRunner:
     async def run(self, *, attempt_slot: int = 1) -> ScheduledPushRunResult:
         LOGGER.info('Starting scheduled collection job for slot %s', attempt_slot)
         settings_service = SystemSettingsService()
+        podcast_service = PodcastService()
 
         async with AsyncSessionLocal() as session:
             runtime = await settings_service.get_or_create(session)
@@ -78,14 +80,30 @@ class ScheduledPushRunner:
             contents = list(db_result.scalars().all())
 
             if not contents:
+                await podcast_service.build_episode(session, report_date=datetime.now(timezone).date(), contents=[])
                 state.success_at = utcnow()
                 state.last_error = None
                 await session.commit()
                 LOGGER.info('Skipping scheduled push because no processed contents were collected')
                 return ScheduledPushRunResult(attempted_push=False, skipped_reason='no_contents')
 
+            podcast_result = await podcast_service.build_episode(
+                session,
+                report_date=datetime.now(timezone).date(),
+                contents=contents,
+            )
+            podcast_settings = await podcast_service.get_or_create_settings(session)
+            podcast_attachment = self._build_podcast_attachment(
+                podcast_result,
+                include_audio_link=podcast_settings.podcast_include_audio_link,
+            )
+
             try:
-                chunk_count, _ = await PushPlusNotifier(runtime.pushplus_token).send_daily_report(contents)
+                chunk_count, _ = await PushPlusNotifier(runtime.pushplus_token).send_daily_report(
+                    contents,
+                    report_date=datetime.now(timezone).date(),
+                    podcast=podcast_attachment,
+                )
             except NotifierError as exc:
                 state.last_error = str(exc)
                 await session.commit()
@@ -97,6 +115,28 @@ class ScheduledPushRunner:
             await session.commit()
             LOGGER.info('Scheduled push finished with %s message chunk(s)', chunk_count)
             return ScheduledPushRunResult(attempted_push=True, pushed_chunks=chunk_count)
+
+    def _build_podcast_attachment(
+        self,
+        result: PodcastBuildResult,
+        *,
+        include_audio_link: bool,
+    ) -> PodcastAttachment | None:
+        if not include_audio_link:
+            return None
+        if result.status == 'ready' and result.audio_url and result.title:
+            return PodcastAttachment(
+                title=result.title,
+                audio_url=result.audio_url,
+                duration_seconds=result.duration_seconds,
+            )
+        if result.status == 'failed':
+            return PodcastAttachment(
+                title='双人 AI 随身听',
+                audio_url='生成失败',
+                status_message=result.error_message or '本期音频生成失败，已退化为纯文字日报。',
+            )
+        return None
 
     async def _get_or_create_state(self, session, report_date: str) -> ScheduledPushState:
         result = await session.execute(

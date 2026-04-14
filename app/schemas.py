@@ -160,6 +160,14 @@ class SystemSettingsResponse(BaseModel):
     pushplus_configured: bool
     pushplus_token_masked: str | None = None
     seed_default_monitor_sources: bool
+    podcast_audio_enabled: bool = False
+    podcast_include_audio_link: bool = True
+    tts_voice_male: str = 'alloy'
+    tts_voice_female: str = 'nova'
+    podcast_last_status: str | None = None
+    podcast_last_error: str | None = None
+    podcast_last_audio_url: str | None = None
+    podcast_last_duration_seconds: int | None = None
 
 
 class SystemSettingsUpdate(BaseModel):
@@ -170,3 +178,7 @@ class SystemSettingsUpdate(BaseModel):
     fetch_lookback_hours: int = Field(ge=1, le=168)
     push_provider: str = 'pushplus'
     pushplus_token: str | None = None
+    podcast_audio_enabled: bool = False
+    podcast_include_audio_link: bool = True
+    tts_voice_male: str = 'alloy'
+    tts_voice_female: str = 'nova'

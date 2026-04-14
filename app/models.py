@@ -145,3 +145,35 @@ class ScheduledPushState(Base):
     last_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class PodcastSetting(Base):
+    __tablename__ = 'podcast_settings'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    podcast_audio_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    podcast_include_audio_link: Mapped[bool] = mapped_column(Boolean, default=True)
+    tts_voice_male: Mapped[str] = mapped_column(String(100), default='alloy')
+    tts_voice_female: Mapped[str] = mapped_column(String(100), default='nova')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class PodcastEpisode(Base):
+    __tablename__ = 'podcast_episodes'
+    __table_args__ = (
+        UniqueConstraint('report_date', name='uq_podcast_episode_report_date'),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    report_date: Mapped[str] = mapped_column(String(16), index=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default='pending', index=True)
+    audio_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    script_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dialogue_lines: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    error_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

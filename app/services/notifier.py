@@ -1,7 +1,8 @@
 ﻿from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
 
 import httpx
 
@@ -12,6 +13,14 @@ PUSHPLUS_API = 'https://www.pushplus.plus/send'
 
 class NotifierError(RuntimeError):
     pass
+
+
+@dataclass(slots=True)
+class PodcastAttachment:
+    title: str
+    audio_url: str
+    duration_seconds: int | None = None
+    status_message: str | None = None
 
 
 class PushPlusNotifier:
@@ -41,10 +50,15 @@ class PushPlusNotifier:
         if data.get('code') != 200:
             raise NotifierError(data.get('msg') or 'PushPlus returned an error.')
 
-    def format_daily_report(self, contents: Iterable[ProcessedContent], report_date: date) -> list[str]:
+    def format_daily_report(
+        self,
+        contents: Iterable[ProcessedContent],
+        report_date: date,
+        podcast: PodcastAttachment | None = None,
+    ) -> list[str]:
         items = sorted(
             [item for item in contents if not item.is_duplicate],
-            key=lambda item: ((item.importance_stars or 0), item.published_at or item.collected_at),
+            key=lambda item: ((item.importance_stars or 0), self._sort_timestamp(item.published_at or item.collected_at)),
             reverse=True,
         )
 
@@ -52,6 +66,8 @@ class PushPlusNotifier:
         other_items = [item for item in items if item not in headline_items]
 
         sections: list[str] = [f'# AI 行业日报 {report_date.isoformat()}']
+        if podcast is not None:
+            sections.append(self._format_podcast_section(podcast))
         if headline_items:
             sections.append('## 今日头条')
             for item in headline_items:
@@ -67,15 +83,37 @@ class PushPlusNotifier:
 
         return self._split_markdown_chunks(sections)
 
-    async def send_daily_report(self, contents: Iterable[ProcessedContent], report_date: date | None = None) -> tuple[int, list[str]]:
+    async def send_daily_report(
+        self,
+        contents: Iterable[ProcessedContent],
+        report_date: date | None = None,
+        podcast: PodcastAttachment | None = None,
+    ) -> tuple[int, list[str]]:
         target_date = report_date or date.today()
-        chunks = self.format_daily_report(contents, target_date)
+        chunks = self.format_daily_report(contents, target_date, podcast=podcast)
         for index, chunk in enumerate(chunks, start=1):
             title = f'AI 行业日报 {target_date.isoformat()}'
             if len(chunks) > 1:
                 title = f'{title} ({index}/{len(chunks)})'
             await self.send_markdown(title, chunk)
         return len(chunks), chunks
+
+    def _format_podcast_section(self, podcast: PodcastAttachment) -> str:
+        duration = ''
+        if podcast.duration_seconds:
+            minutes = max(1, round(podcast.duration_seconds / 60))
+            duration = f'\n- 预计时长：约 {minutes} 分钟'
+        audio_line = f'- 播放链接：{podcast.audio_url}'
+        if not str(podcast.audio_url).startswith('http'):
+            audio_line = f'- 状态：{podcast.audio_url}'
+        status_message = ''
+        if podcast.status_message:
+            status_message = f'\n- 说明：{podcast.status_message}'
+        return (
+            '## AI 随身听\n'
+            f'- 节目标题：{podcast.title}{duration}\n'
+            f'{audio_line}{status_message}'
+        )
 
     def _format_item(self, item: ProcessedContent, *, include_reason: bool) -> str:
         title = item.title or '未命名内容'
@@ -105,3 +143,10 @@ class PushPlusNotifier:
         if current:
             chunks.append(current)
         return chunks
+
+    def _sort_timestamp(self, value: datetime | None) -> float:
+        if value is None:
+            return 0.0
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.timestamp()

@@ -19,6 +19,7 @@
 - 将处理结果落库，并记录每个监控源最近一次抓取状态
 - 支持管理页手动“立即采集”和“测试推送”
 - 支持 PushPlus 日报推送
+- 支持双人互动版 AI 随身听播客生成与外链推送
 - 支持自建 RSSHub，为 X / Twitter 以及部分 B 站场景提供抓取能力
 
 ## 当前平台状态
@@ -39,6 +40,7 @@
 - PushPlus
 - RSSHub
 - Windows Task Scheduler
+- S3 兼容对象存储
 
 ## 目录结构
 
@@ -165,6 +167,32 @@ python -m app.run_scheduled_job
 ### PushPlus
 
 - `PUSHPLUS_TOKEN`
+
+### 双人随身听
+
+- `PODCAST_AUDIO_ENABLED`
+- `PODCAST_INCLUDE_AUDIO_LINK`
+- `TTS_API_KEY`
+- `TTS_BASE_URL`
+- `TTS_MODEL`
+- `TTS_VOICE_MALE`
+- `TTS_VOICE_FEMALE`
+- `TTS_FORMAT`
+
+说明：
+
+- 当前双人播客默认使用“男声 + 女声”分段 TTS 合成
+- 当前实现内部先生成 `wav`，再自动压成 `mp3` 供外链播放
+
+### 音频对象存储
+
+- `AUDIO_STORAGE_PROVIDER`
+- `AUDIO_STORAGE_ENDPOINT`
+- `AUDIO_STORAGE_BUCKET`
+- `AUDIO_STORAGE_ACCESS_KEY`
+- `AUDIO_STORAGE_SECRET_KEY`
+- `AUDIO_STORAGE_REGION`
+- `AUDIO_STORAGE_PUBLIC_BASE_URL`
 
 ### B 站
 

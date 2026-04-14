@@ -4,6 +4,7 @@ from app.config import get_settings
 from app.models import SystemSetting
 from app.schemas import SystemSettingsResponse, SystemSettingsUpdate
 from app.services.fetcher import FetcherService
+from app.services.podcast_service import PodcastService
 from app.services.windows_scheduler import WindowsTaskSchedulerError, WindowsTaskSchedulerService
 
 
@@ -20,6 +21,7 @@ class SystemSettingsService:
     def __init__(self) -> None:
         self.config = get_settings()
         self.windows_scheduler = WindowsTaskSchedulerService()
+        self.podcast_service = PodcastService()
 
     async def get_or_create(self, session) -> SystemSetting:
         settings = await session.get(SystemSetting, 1)
@@ -44,6 +46,8 @@ class SystemSettingsService:
 
     async def read_response(self, session) -> SystemSettingsResponse:
         settings = await self.get_or_create(session)
+        podcast_settings = await self.podcast_service.get_or_create_settings(session)
+        latest_episode = await self.podcast_service.get_latest_episode(session)
         scheduler_status = await self.windows_scheduler.get_status()
         return SystemSettingsResponse(
             scheduler_enabled=settings.scheduler_enabled,
@@ -63,6 +67,14 @@ class SystemSettingsService:
             pushplus_configured=bool(settings.pushplus_token),
             pushplus_token_masked=mask_token(settings.pushplus_token),
             seed_default_monitor_sources=settings.seed_default_monitor_sources,
+            podcast_audio_enabled=podcast_settings.podcast_audio_enabled,
+            podcast_include_audio_link=podcast_settings.podcast_include_audio_link,
+            tts_voice_male=podcast_settings.tts_voice_male,
+            tts_voice_female=podcast_settings.tts_voice_female,
+            podcast_last_status=latest_episode.status if latest_episode else None,
+            podcast_last_error=latest_episode.error_message if latest_episode else None,
+            podcast_last_audio_url=latest_episode.audio_url if latest_episode else None,
+            podcast_last_duration_seconds=latest_episode.duration_seconds if latest_episode else None,
         )
 
     async def update(self, session, payload: SystemSettingsUpdate) -> SystemSettingsResponse:
@@ -84,6 +96,11 @@ class SystemSettingsService:
         settings.scheduler_timezone = payload.scheduler_timezone
         settings.fetch_lookback_hours = payload.fetch_lookback_hours
         settings.push_provider = 'pushplus'
+        podcast_settings = await self.podcast_service.get_or_create_settings(session)
+        podcast_settings.podcast_audio_enabled = payload.podcast_audio_enabled
+        podcast_settings.podcast_include_audio_link = payload.podcast_include_audio_link
+        podcast_settings.tts_voice_male = payload.tts_voice_male.strip() or self.config.tts_voice_male
+        podcast_settings.tts_voice_female = payload.tts_voice_female.strip() or self.config.tts_voice_female
 
         new_token = (payload.pushplus_token or '').strip()
         if new_token:
