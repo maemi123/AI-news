@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,12 +43,18 @@ class WindowsTaskSchedulerService:
         return os.name == 'nt'
 
     def resolve_python_command(self) -> str:
+        current_python = Path(sys.executable)
+        if current_python.exists():
+            return str(current_python)
         venv_python = self.project_root / '.venv' / 'Scripts' / 'python.exe'
         if venv_python.exists():
             return str(venv_python)
         return 'py -3'
 
     def _build_task_action(self, attempt_slot: int) -> tuple[str, str]:
+        current_python = Path(sys.executable)
+        if current_python.exists():
+            return str(current_python), f'-m app.run_scheduled_job --attempt-slot {attempt_slot}'
         venv_python = self.project_root / '.venv' / 'Scripts' / 'python.exe'
         if venv_python.exists():
             return str(venv_python), f'-m app.run_scheduled_job --attempt-slot {attempt_slot}'

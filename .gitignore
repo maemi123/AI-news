@@ -45,6 +45,7 @@ rsshub/.env
 
 # 日志
 *.log
+logs/
 
 # 临时文件
 *.tmp

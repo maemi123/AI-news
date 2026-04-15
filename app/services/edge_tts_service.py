@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import os
 import re
 import shutil
 import subprocess
@@ -113,6 +115,11 @@ class EdgeDialogueTTSService:
             return output_path.read_bytes(), duration_seconds, 'audio/mpeg', 'mp3'
         finally:
             shutil.rmtree(temp_path, ignore_errors=True)
+            try:
+                if temp_root.exists() and not any(temp_root.iterdir()):
+                    temp_root.rmdir()
+            except OSError:
+                pass
 
     def _read_duration_seconds(self, *, ffmpeg_exe: str, path: Path) -> int:
         result = subprocess.run(
