@@ -27,6 +27,8 @@ class Deduplicator:
         best_match: Any | None = None
 
         for candidate in recent_contents:
+            if self._is_same_source(new_content, candidate):
+                continue
             candidate_title = self._normalize_title(self._read_attr(candidate, 'title'))
             if not candidate_title:
                 continue
@@ -63,6 +65,20 @@ class Deduplicator:
 
     def _normalize_title(self, title: str | None) -> str:
         return re.sub(r'\s+', '', str(title or '').strip()).lower()
+
+    def _is_same_source(self, new_content: RawContent, candidate: Any) -> bool:
+        new_source_id = self._read_attr(new_content, 'source_id')
+        candidate_source_id = self._read_attr(candidate, 'source_id')
+        if new_source_id is not None and candidate_source_id is not None:
+            return new_source_id == candidate_source_id
+
+        new_platform = str(self._read_attr(new_content, 'platform') or '').strip().lower()
+        candidate_platform = str(self._read_attr(candidate, 'platform') or '').strip().lower()
+        new_source_name = str(self._read_attr(new_content, 'source_name') or '').strip().lower()
+        candidate_source_name = str(self._read_attr(candidate, 'source_name') or '').strip().lower()
+        if new_platform and candidate_platform and new_source_name and candidate_source_name:
+            return new_platform == candidate_platform and new_source_name == candidate_source_name
+        return False
 
     def _read_attr(self, value: Any, attr: str) -> Any:
         if isinstance(value, dict):

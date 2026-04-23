@@ -11,6 +11,7 @@ import httpx
 
 from app.config import get_settings
 from app.models import ProcessedContent
+from app.services.notifier import PushPlusNotifier
 
 LOGGER = logging.getLogger(__name__)
 
@@ -47,84 +48,115 @@ class PodcastScriptService:
         if not contents:
             raise PodcastScriptError('No contents available for podcast script generation.')
 
-        prompt = self._build_prompt(contents=contents, report_date=report_date)
-        payload = {
-            'model': self.settings.deepseek_model,
-            'temperature': 0.4,
-            'response_format': {'type': 'json_object'},
-            'messages': [
-                {
-                    'role': 'system',
-                    'content': 'You are a Chinese AI news podcast script writer. Reply with a single JSON object only.',
-                },
-                {'role': 'user', 'content': prompt},
-            ],
-        }
-        headers = {
-            'Authorization': f'Bearer {self.settings.deepseek_api_key}',
-            'Content-Type': 'application/json',
-        }
+        last_script: PodcastScript | None = None
+        for attempt in range(2):
+            prompt = self._build_prompt(contents=contents, report_date=report_date, strict_length=attempt > 0)
+            payload = {
+                'model': self.settings.deepseek_model,
+                'temperature': 0.45,
+                'response_format': {'type': 'json_object'},
+                'messages': [
+                    {
+                        'role': 'system',
+                        'content': 'You are a Chinese AI news podcast script writer. Reply with a single JSON object only.',
+                    },
+                    {'role': 'user', 'content': prompt},
+                ],
+            }
+            headers = {
+                'Authorization': f'Bearer {self.settings.deepseek_api_key}',
+                'Content-Type': 'application/json',
+            }
 
-        try:
-            async with httpx.AsyncClient(timeout=90.0) as client:
-                response = await client.post(
-                    self.settings.deepseek_chat_completions_url,
-                    headers=headers,
-                    json=payload,
-                )
-                response.raise_for_status()
-                data = response.json()
-        except httpx.HTTPStatusError as exc:
-            detail = exc.response.text[:500]
-            LOGGER.exception('Podcast script model returned an error: %s', detail)
-            raise PodcastScriptError(f'Podcast script model returned an error: {detail}') from exc
-        except httpx.HTTPError as exc:
-            LOGGER.exception('Podcast script request failed')
-            raise PodcastScriptError(f'Podcast script request failed: {exc}') from exc
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(
+                        self.settings.deepseek_chat_completions_url,
+                        headers=headers,
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+            except httpx.HTTPStatusError as exc:
+                detail = exc.response.text[:500]
+                LOGGER.exception('Podcast script model returned an error: %s', detail)
+                raise PodcastScriptError(f'Podcast script model returned an error: {detail}') from exc
+            except httpx.HTTPError as exc:
+                LOGGER.exception('Podcast script request failed')
+                raise PodcastScriptError(f'Podcast script request failed: {exc}') from exc
 
-        try:
-            content_text = data['choices'][0]['message']['content']
-        except (KeyError, IndexError, TypeError) as exc:
-            raise PodcastScriptError('Podcast script response structure is invalid.') from exc
+            try:
+                content_text = data['choices'][0]['message']['content']
+            except (KeyError, IndexError, TypeError) as exc:
+                raise PodcastScriptError('Podcast script response structure is invalid.') from exc
 
-        parsed = self._parse_json(content_text)
-        return self._normalize_result(parsed, report_date=report_date)
+            parsed = self._parse_json(content_text)
+            script = self._normalize_result(parsed, report_date=report_date)
+            last_script = script
+            total_chars = sum(len(line['text']) for line in script.dialogue_lines)
+            if script.estimated_minutes >= 5 and total_chars >= 900 and len(script.dialogue_lines) >= 24:
+                return script
+            LOGGER.info(
+                'Podcast script was shorter than target on attempt %s: estimated_minutes=%s, chars=%s, lines=%s',
+                attempt + 1,
+                script.estimated_minutes,
+                total_chars,
+                len(script.dialogue_lines),
+            )
 
-    def _build_prompt(self, *, contents: list[ProcessedContent], report_date: date) -> str:
+        if last_script is None:
+            raise PodcastScriptError('Podcast script generation produced no valid script.')
+        return last_script
+
+    def _build_prompt(self, *, contents: list[ProcessedContent], report_date: date, strict_length: bool = False) -> str:
+        grouped_items = PushPlusNotifier('')._group_report_items(contents)
         top_items = sorted(
-            [item for item in contents if not item.is_duplicate],
-            key=lambda item: ((item.importance_stars or 0), self._sort_timestamp(item.published_at or item.collected_at)),
+            grouped_items,
+            key=lambda item: (
+                int(item.get('importance_stars') or 0),
+                self._sort_timestamp(item.get('published_at') or item.get('collected_at')),
+            ),
             reverse=True,
-        )[:8]
+        )[:18]
         serialized_items = []
         for item in top_items:
             serialized_items.append(
                 {
-                    'title': item.title,
-                    'summary': item.summary or item.content or '',
-                    'importance_stars': item.importance_stars,
-                    'importance_reason': item.importance_reason or '',
-                    'source': item.source_name or item.platform,
-                    'url': item.url or '',
+                    'title': item.get('title') or '',
+                    'summary': item.get('summary') or '',
+                    'importance_stars': item.get('importance_stars') or 1,
+                    'importance_reason': item.get('importance_reason') or '',
+                    'source': ' / '.join(str(name) for name in item.get('source_names', [])),
+                    'related_titles': item.get('cluster_notes') or [],
+                    'url': item.get('primary_url') or '',
                 }
             )
         items_json = json.dumps(serialized_items, ensure_ascii=False, indent=2)
+        extra_length_rule = ''
+        if strict_length:
+            extra_length_rule = '\n- 上一版太短了，这一版必须明显更完整：至少 24 轮对话、总字数至少 900 字，尽量覆盖更多主题。'
         return f'''请基于下面的 AI 时讯列表，生成一份适合“男主持 + 女主持”的中文双人播客对话稿，只返回 JSON。
 
 节目日期：{report_date.isoformat()}
-节目定位：AI 日报随身听，双人搭档聊天感，像两个熟悉 AI 行业的人在通勤路上把重点新闻讲给你听。
-节目要求：
-- 只基于给定新闻，不要添加原文里没有的事实。
-- 节目总时长目标 5-8 分钟。
-- 语气自然、口语化，有一点真人互动感，少一点新闻联播式播报味。
-- 允许适度出现“我刚看到这个也有点意外”“这个点我觉得值得注意”这类轻互动表达，但不要油腻，不要夸张。
-- 开场简单寒暄一句即可，不要官腔。
-- 主持人轮流说话，避免单边长段输出；每轮尽量 1-3 句。
-- 每条新闻优先说清楚“发生了什么”和“为什么值得听”。
-- 男主持更像负责抛出话题和串联节奏，女主持更像负责补充背景和点出影响，但都不要固定死板。
-- 允许两位主持人之间有简短接话、追问、补充，而不是机械轮读摘要。
-- 不写夸张段子，不写虚构故事，不写无根据推断。
+节目定位：AI 日报随身听。听感要像两位熟悉 AI 行业的人在通勤路上帮听众快速梳理今天的重点。
+
+硬性要求：
+- 只基于给定新闻，不添加原文没有的事实。
+- 目标时长 5-8 分钟，不能只讲两三条。内容多时可以压缩，但至少覆盖 10 条新闻或全部新闻中的 70%，取二者较小值。
+- 对相同主题的重复新闻要合并讲，例如 OpenAI 图像模型、Kimi K2.6 这类同一主题不要反复播报。
+- 每个主题至少说明“发生了什么”和“为什么值得听”。
+- B 站聚合视频里如果包含多个独立新闻，要拆成多个短点讲，不要只说“某视频提到了很多更新”。
+- 语气自然、口语化、有搭档互动感，少一点新闻联播式播报。
+- 每轮台词 1-3 句，不要单人长篇独白。
+- 可以有轻微接话、追问、补充，但不要段子化，不要虚构人物互动。
 - 统一使用简体中文。
+{extra_length_rule}
+
+建议结构：
+- 开场 2 轮：一句寒暄 + 今天整体看点。
+- 重点主题 5-8 个：每个主题 2-4 轮对话。
+- 快速扫尾 3-6 条：每条 1-2 轮对话。
+- 结尾 1-2 轮：总结今天主线。
 
 输出 JSON 结构：
 {{
@@ -188,8 +220,8 @@ class PodcastScriptService:
         try:
             estimated_minutes = int(estimated_minutes)
         except (TypeError, ValueError):
-            estimated_minutes = max(3, min(8, total_chars // 180))
-        estimated_minutes = max(3, min(8, estimated_minutes))
+            estimated_minutes = max(5, min(8, total_chars // 170))
+        estimated_minutes = max(5, min(8, estimated_minutes))
 
         return PodcastScript(
             title=str(parsed.get('title') or f'AI 时讯随身听 {report_date.isoformat()}').strip(),

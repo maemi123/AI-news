@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+import re
 from typing import Any
 from urllib.parse import quote
 
@@ -141,24 +142,277 @@ class FetcherService:
                 return await self._fetch_rss(source, cutoff=cutoff, rss_url=rsshub_bilibili_url)
             raise FetcherError(str(exc)) from exc
 
-        return [
-            RawContent(
-                source_id=source.id,
-                source_name=source.name,
-                source_category=source.category,
-                importance_weight=source.importance_weight,
-                platform='bilibili',
-                original_id=item['original_id'],
-                title=item['title'],
-                content=item.get('content') or '',
-                url=item.get('url'),
-                published_at=item.get('published_at'),
-                author=item.get('author'),
-                metadata={'source_url': source.source_url or '', 'rss_url': source.rss_url or ''},
+        results: list[RawContent] = []
+        for item in videos:
+            if not self._is_after_cutoff(item.get('published_at'), cutoff):
+                continue
+            results.extend(self._expand_bilibili_video_into_contents(source, item))
+        return results
+
+    def _expand_bilibili_video_into_contents(
+        self,
+        source: MonitorSource,
+        item: dict[str, Any],
+    ) -> list[RawContent]:
+        base_metadata = {'source_url': source.source_url or '', 'rss_url': source.rss_url or ''}
+        timeline_topics = self._extract_bilibili_timeline_topics(item)
+        if not timeline_topics:
+            return [
+                RawContent(
+                    source_id=source.id,
+                    source_name=source.name,
+                    source_category=source.category,
+                    importance_weight=source.importance_weight,
+                    platform='bilibili',
+                    original_id=item['original_id'],
+                    title=item['title'],
+                    content=item.get('transcript_content') or item.get('content') or '',
+                    url=item.get('url'),
+                    published_at=item.get('published_at'),
+                    author=item.get('author'),
+                    metadata={
+                        **base_metadata,
+                        'bilibili_transcript_source': item.get('transcript_source') or 'none',
+                    },
+                )
+            ]
+
+        expanded: list[RawContent] = []
+        parent_title = str(item.get('title') or '').strip()
+        parent_content = str(item.get('content') or '').strip()
+        transcript_content = str(item.get('transcript_content') or '').strip()
+        transcript_segments = item.get('transcript_segments') or []
+        transcript_source = str(item.get('transcript_source') or 'none').strip() or 'none'
+        for index, topic in enumerate(timeline_topics, start=1):
+            next_topic = timeline_topics[index] if index < len(timeline_topics) else None
+            topic_excerpt = self._build_bilibili_topic_excerpt(
+                transcript_segments=transcript_segments,
+                start_seconds=topic.get('timestamp_seconds'),
+                end_seconds=(next_topic or {}).get('timestamp_seconds'),
+                fallback_text=transcript_content or parent_content,
+                topic_title=topic['title'],
             )
-            for item in videos
-            if self._is_after_cutoff(item.get('published_at'), cutoff)
+            expanded.append(
+                RawContent(
+                    source_id=source.id,
+                    source_name=source.name,
+                    source_category=source.category,
+                    importance_weight=source.importance_weight,
+                    platform='bilibili',
+                    original_id=f"{item['original_id']}#topic#{index}",
+                    title=topic['title'],
+                    content=self._build_bilibili_topic_content(
+                        parent_title=parent_title,
+                        parent_content=parent_content,
+                        transcript_source=transcript_source,
+                        topic_title=topic['title'],
+                        timestamp=topic.get('timestamp'),
+                        topic_excerpt=topic_excerpt,
+                    ),
+                    url=item.get('url'),
+                    published_at=item.get('published_at'),
+                    author=item.get('author'),
+                    metadata={
+                        **base_metadata,
+                        'bilibili_parent_title': parent_title,
+                        'bilibili_topic_timestamp': topic.get('timestamp') or '',
+                        'bilibili_topic_timestamp_seconds': topic.get('timestamp_seconds'),
+                        'bilibili_topic_index': index,
+                        'bilibili_transcript_source': transcript_source,
+                    },
+                )
+            )
+        return expanded
+
+    def _extract_bilibili_timeline_topics(self, item: dict[str, Any]) -> list[dict[str, str]]:
+        content = str(item.get('content') or '').strip()
+        if not content:
+            return []
+
+        patterns = [
+            r'(?:^|\n)\s*(?P<ts>\d{1,2}[:：]\d{2})\s*[ \u00a0]*(?P<title>[^\n\r]+)',
+            r'(?:^|\n)\s*\d+[·\.\-、]\s*(?P<title>[^\[\n\r]+?)\s*\[(?P<ts>\d{1,2}[:：]\d{2})\]',
         ]
+        topics: list[dict[str, str]] = []
+        for pattern in patterns:
+            for match in re.finditer(pattern, content, flags=re.IGNORECASE):
+                title = str(match.group('title') or '').strip(' ：:·.-、，,；;。')
+                timestamp = str(match.group('ts') or '').replace('：', ':').strip()
+                if not title:
+                    continue
+                if self._is_generic_bilibili_topic(title):
+                    continue
+                if not self._looks_like_ai_topic(title):
+                    continue
+                if any(existing['title'] == title for existing in topics):
+                    continue
+                topics.append(
+                    {
+                        'title': title,
+                        'timestamp': timestamp,
+                        'timestamp_seconds': self._parse_bilibili_timestamp_seconds(timestamp),
+                    }
+                )
+        return topics[:12]
+
+    def _build_bilibili_topic_content(
+        self,
+        *,
+        parent_title: str,
+        parent_content: str,
+        transcript_source: str,
+        topic_title: str,
+        timestamp: str | None,
+        topic_excerpt: str,
+    ) -> str:
+        headline = f'视频标题：{parent_title}' if parent_title else ''
+        timeline = f'视频时间点：{timestamp}' if timestamp else ''
+        topic = f'本条新闻点：{topic_title}'
+        transcript_label = '对应字幕/转写内容'
+        if transcript_source == 'subtitle':
+            transcript_label = '对应字幕内容'
+        elif transcript_source == 'whisper':
+            transcript_label = '对应音频转写内容'
+        detail = f'{transcript_label}：{topic_excerpt}' if topic_excerpt else ''
+        fallback = f'视频简介与时间轴：{parent_content}' if parent_content and not topic_excerpt else ''
+        parts = [part for part in [headline, timeline, topic, detail, fallback] if part]
+        return '\n'.join(parts)
+
+    def _build_bilibili_topic_excerpt(
+        self,
+        *,
+        transcript_segments: list[Any],
+        start_seconds: int | None,
+        end_seconds: int | None,
+        fallback_text: str,
+        topic_title: str,
+    ) -> str:
+        excerpt = self._slice_bilibili_transcript_segments(
+            transcript_segments=transcript_segments,
+            start_seconds=start_seconds,
+            end_seconds=end_seconds,
+        )
+        if excerpt:
+            return excerpt
+
+        fallback_excerpt = self._slice_bilibili_fallback_text(
+            fallback_text=fallback_text,
+            start_seconds=start_seconds,
+            end_seconds=end_seconds,
+            topic_title=topic_title,
+        )
+        return fallback_excerpt
+
+    def _slice_bilibili_transcript_segments(
+        self,
+        *,
+        transcript_segments: list[Any],
+        start_seconds: int | None,
+        end_seconds: int | None,
+    ) -> str:
+        if not transcript_segments:
+            return ''
+
+        matched_texts: list[str] = []
+        upper_bound = end_seconds if end_seconds is not None else 10**9
+        for segment in transcript_segments:
+            segment_start = self._segment_seconds(segment, 'start_seconds', 'start')
+            segment_end = self._segment_seconds(segment, 'end_seconds', 'end')
+            segment_text = self._segment_text(segment)
+            if not segment_text:
+                continue
+            if start_seconds is not None and segment_end < max(start_seconds - 2, 0):
+                continue
+            if end_seconds is not None and segment_start > upper_bound + 2:
+                continue
+            matched_texts.append(segment_text)
+
+        excerpt = ' '.join(matched_texts).strip()
+        excerpt = re.sub(r'\s+', ' ', excerpt)
+        return excerpt[:1200].strip()
+
+    def _slice_bilibili_fallback_text(
+        self,
+        *,
+        fallback_text: str,
+        start_seconds: int | None,
+        end_seconds: int | None,
+        topic_title: str,
+    ) -> str:
+        normalized = str(fallback_text or '').strip()
+        if not normalized:
+            return topic_title
+
+        lines = [line.strip() for line in normalized.splitlines() if line.strip()]
+        timestamp_pattern = re.compile(r'(?P<ts>\d{1,2}[:：]\d{2})')
+        matched_lines: list[str] = []
+        upper_bound = end_seconds if end_seconds is not None else 10**9
+
+        for line in lines:
+            match = timestamp_pattern.search(line)
+            if not match:
+                continue
+            line_seconds = self._parse_bilibili_timestamp_seconds(match.group('ts'))
+            if line_seconds is None:
+                continue
+            if start_seconds is not None and line_seconds < max(start_seconds - 2, 0):
+                continue
+            if end_seconds is not None and line_seconds > upper_bound + 2:
+                continue
+            matched_lines.append(line)
+
+        if not matched_lines:
+            matched_lines = [line for line in lines if topic_title in line][:3]
+
+        excerpt = ' '.join(matched_lines).strip()
+        excerpt = re.sub(r'\s+', ' ', excerpt)
+        return excerpt[:800].strip() or topic_title
+
+    def _segment_seconds(self, segment: Any, primary_key: str, fallback_key: str) -> float:
+        if hasattr(segment, primary_key):
+            return float(getattr(segment, primary_key) or 0.0)
+        if isinstance(segment, dict):
+            return float(segment.get(primary_key) or segment.get(fallback_key) or 0.0)
+        return 0.0
+
+    def _segment_text(self, segment: Any) -> str:
+        if hasattr(segment, 'text'):
+            return str(getattr(segment, 'text') or '').strip()
+        if isinstance(segment, dict):
+            return str(segment.get('text') or '').strip()
+        return ''
+
+    def _parse_bilibili_timestamp_seconds(self, timestamp: str | None) -> int | None:
+        normalized = str(timestamp or '').replace('：', ':').strip()
+        if not normalized:
+            return None
+        match = re.fullmatch(r'(?P<minutes>\d{1,2}):(?P<seconds>\d{2})', normalized)
+        if not match:
+            return None
+        minutes = int(match.group('minutes'))
+        seconds = int(match.group('seconds'))
+        return minutes * 60 + seconds
+
+    def _looks_like_ai_topic(self, text: str) -> bool:
+        normalized = text.lower()
+        keywords = (
+            'ai', 'gpt', 'kimi', 'claude', 'gemini', 'deepseek', 'openai', 'chatgpt',
+            'copilot', 'cursor', 'agent', '智能体', '模型', '大模型', '开源', '图像',
+            '图片', '代码', '编程', 'api', '研究', '自动驾驶', '机器人',
+        )
+        return any(keyword in normalized for keyword in keywords)
+
+    def _is_generic_bilibili_topic(self, text: str) -> bool:
+        normalized = text.strip().lower()
+        generic_phrases = (
+            '多家ai公司发布新动态',
+            '多家公司发布ai产品更新',
+            'ai行业早报',
+            '新动态',
+            '产品更新',
+            '行业早报',
+        )
+        return any(phrase in normalized for phrase in generic_phrases)
 
     async def fetch_weibo_user(self, source: MonitorSource, *, cutoff: datetime | None = None) -> list[RawContent]:
         if not source.platform_id.strip().isdigit():
@@ -322,6 +576,8 @@ class FetcherService:
             async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
                 response = await client.get(url, headers=headers)
                 response.raise_for_status()
+                if 'login.sina.com.cn' in str(response.url):
+                    raise FetcherError('Weibo cookies expired or invalid; request was redirected to Sina login.')
                 payload = response.json()
         except httpx.HTTPError as exc:
             raise FetcherError(f'Failed to fetch Weibo API: {exc}') from exc

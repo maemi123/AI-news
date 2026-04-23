@@ -24,6 +24,7 @@ wheels/
 *.egg
 .codex
 rsshub/.env
+.runtime/
 
 # 环境变量和密钥
 .env

@@ -35,6 +35,7 @@ DEFAULT_MONITOR_SOURCES: list[dict[str, Any]] = [
     {'name': '宝玉', 'platform': 'weibo', 'platform_id': '1727858283', 'rss_url': 'https://rsshub.app/weibo/user/1727858283', 'category': 'kol', 'importance_weight': 4, 'extra_config': {'note': '中文AI技术解读很快'}},
     {'name': '小互', 'platform': 'weibo', 'platform_id': '1814584931', 'rss_url': 'https://rsshub.app/weibo/user/1814584931', 'category': 'kol', 'importance_weight': 3, 'extra_config': {'note': 'AI应用发现型博主'}},
     {'name': '新智元', 'platform': 'weibo', 'platform_id': '5703921756', 'rss_url': 'https://rsshub.app/weibo/user/5703921756', 'category': 'kol', 'importance_weight': 4, 'extra_config': {'note': 'AI资讯媒体账号'}},
+    {'name': '蚁工厂', 'platform': 'weibo', 'platform_id': '2194035935', 'rss_url': 'https://rsshub.app/weibo/user/2194035935', 'category': 'kol', 'importance_weight': 4, 'extra_config': {'note': 'AI资讯与产品动态账号'}},
     {'name': '归藏', 'platform': 'weibo', 'platform_id': '归藏', 'rss_url': 'https://rsshub.app/weibo/user/归藏', 'category': 'kol', 'importance_weight': 3, 'extra_config': {'note': 'AIGC Prompt 方向'}},
     {'name': 'Orange AI', 'platform': 'weibo', 'platform_id': 'Orange AI', 'rss_url': 'https://rsshub.app/weibo/user/Orange AI', 'category': 'kol', 'importance_weight': 4, 'extra_config': {'note': 'AI自动化和Agent实践'}},
     {'name': '田奇', 'platform': 'weibo', 'platform_id': '田奇', 'rss_url': 'https://rsshub.app/weibo/user/田奇', 'category': 'academic', 'importance_weight': 4, 'extra_config': {'note': 'AI for Science 和视觉研究'}},
