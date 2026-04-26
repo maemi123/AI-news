@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import html
 import logging
@@ -675,4 +675,4 @@ class FetcherService:
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             return parsed.astimezone(timezone.utc)
-        return None
+        return None

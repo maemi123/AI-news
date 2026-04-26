@@ -1,4 +1,4 @@
-﻿from app.services.ai_processor import AIProcessor
+from app.services.ai_processor import AIProcessor
 from app.services.bilibili_service import BilibiliService
 from app.services.content_pipeline import ContentPipelineService
 from app.services.deduplicator import Deduplicator

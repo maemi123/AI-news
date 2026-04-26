@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 from app.services.scheduled_push_runner import ScheduledPushRunner
@@ -64,4 +64,4 @@ async def stop_scheduler() -> None:
     if _scheduler is None:
         return
     _scheduler.shutdown(wait=False)
-    _scheduler = None
+    _scheduler = None

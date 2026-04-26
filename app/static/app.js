@@ -1,4 +1,4 @@
-﻿const form = document.getElementById("process-form");
+﻿﻿const form = document.getElementById("process-form");
 const input = document.getElementById("bv-id");
 const submitBtn = document.getElementById("submit-btn");
 const statusBox = document.getElementById("status-box");

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from dataclasses import dataclass
@@ -89,4 +89,4 @@ class Deduplicator:
         try:
             return int(value)
         except (TypeError, ValueError):
-            return None
+            return None
